@@ -2,19 +2,28 @@
 
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser, getMe } = require('../controllers/authController');
+const {
+    registerUser,
+    loginUser,
+    getMe,
+    verifyOTP,
+    setPassword,
+    forgotPassword,
+    resetPassword,
+    resendOTP
+} = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
-// ======================= THE FIX IS HERE =======================
-// We now destructure 'upload' from the imported object.
-const { upload } = require('../middleware/uploadMiddleware');
-// ===============================================================
+// Note: Removed upload middleware for registration to focus on Phone+OTP flow.
+// Profile image can be uploaded after registration via profile updates.
 
-
+router.post('/register', registerUser);
 router.post('/login', loginUser);
+router.post('/verify-otp', verifyOTP);
+router.post('/set-password', setPassword);
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
+router.post('/resend-otp', resendOTP);
 router.get('/me', protect, getMe);
-
-// This line will now work because 'upload' is correctly defined.
-router.post('/register', upload.single('profile_image'), registerUser);
 
 module.exports = router;

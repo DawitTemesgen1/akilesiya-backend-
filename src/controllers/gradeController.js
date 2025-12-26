@@ -24,30 +24,51 @@ const logAudit = async (connection, { tenant_id, admin_user_id, affected_user_id
 
 // --- Course Management ---
 const getCourses = async (req, res) => {
-    const { spiritual_class } = req.query;
+    const { spiritual_class, year } = req.query;
     const tenantId = req.user.tenant_id;
     try {
-        const [courses] = await pool.query(
-            'SELECT id, course_name FROM courses WHERE tenant_id = ? AND spiritual_class = ? ORDER BY course_name',
-            [tenantId, spiritual_class]
-        );
+        let query = 'SELECT id, course_name, academic_year FROM courses WHERE tenant_id = ? AND spiritual_class = ?';
+        let params = [tenantId, spiritual_class];
+
+        if (year) {
+            // Fetch courses specific to this year OR global courses (null year)
+            query += ' AND (academic_year = ? OR academic_year IS NULL)';
+            params.push(year);
+        } else {
+            // If no year specified, fetch only global courses or maybe all? 
+            // For safety/backward compatibility, we'll fetch everything if no year is strict, 
+            // but ideally frontend should always send year now.
+            // Let's just return all so we don't hide data unexpectedly, but frontend should filter/sort.
+        }
+
+        query += ' ORDER BY course_name';
+
+        const [courses] = await pool.query(query, params);
         res.status(200).json(courses);
     } catch (error) {
+        console.error("Error getting courses:", error);
         res.status(500).json({ message: 'Server error while fetching courses.' });
     }
 };
 
 const addCourse = async (req, res) => {
-    const { spiritual_class, course_name } = req.body;
+    const { spiritual_class, course_name, year } = req.body;
     const tenantId = req.user.tenant_id;
     try {
+        // We now include academic_year in the INSERT
         const [result] = await pool.query(
-            'INSERT INTO courses (tenant_id, spiritual_class, course_name) VALUES (?, ?, ?)',
-            [tenantId, spiritual_class, course_name]
+            'INSERT INTO courses (tenant_id, spiritual_class, course_name, academic_year) VALUES (?, ?, ?, ?)',
+            [tenantId, spiritual_class, course_name, year || null] // If year is missing, it's a global course
         );
-        res.status(201).json({ id: result.insertId, course_name: course_name, spiritual_class: spiritual_class });
+        res.status(201).json({
+            id: result.insertId,
+            course_name,
+            spiritual_class,
+            academic_year: year || null
+        });
     } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Course already exists for this class.' });
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Course already exists for this class/year.' });
+        console.error("Error adding course:", error);
         res.status(500).json({ message: 'Server error while adding course.' });
     }
 };
@@ -89,9 +110,9 @@ const saveAssessmentsForCourse = async (req, res) => {
         if (courseCheck.length === 0) {
             throw new Error("Permission denied or course not found.");
         }
-        
+
         await connection.query('DELETE FROM assessments WHERE course_id = ?', [course_id]);
-        
+
         for (const asm of assessments) {
             await connection.query(
                 'INSERT INTO assessments (tenant_id, course_id, assessment_name, max_score) VALUES (?, ?, ?, ?)',
@@ -162,7 +183,7 @@ const calculateStudentGradeSummary = async (student_id, year) => {
     const overallAverage = grades.length > 0
         ? grades.reduce((sum, course) => sum + course.total, 0) / grades.length
         : 0;
-    
+
     return {
         grades,
         average_score: parseFloat(overallAverage.toFixed(2))
@@ -200,7 +221,7 @@ const getStudentsWithGrades = async (req, res) => {
                 average_score: summary.average_score,
             };
         });
-        
+
         let fullResults = await Promise.all(resultPromises);
         fullResults.sort((a, b) => b.average_score - a.average_score);
         fullResults.forEach((student, index) => student.rank = index + 1);
@@ -215,20 +236,20 @@ const getStudentsWithGrades = async (req, res) => {
 
 const saveStudentScores = async (req, res) => {
     const { student_id, year, scores } = req.body;
-    
+
     if (!student_id || !year || !Array.isArray(scores)) {
         return res.status(400).json({ success: false, message: 'Invalid data provided.' });
     }
 
     const adminUserId = req.user.id;
     const tenantId = req.user.tenant_id;
-    
+
     // Defensive check to ensure user info is present
     if (!adminUserId || !tenantId) {
         console.error("CRITICAL: Admin user ID or Tenant ID is missing from the request token.");
         return res.status(500).json({ success: false, message: 'Server authentication error.' });
     }
-    
+
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -243,27 +264,27 @@ const saveStudentScores = async (req, res) => {
 
         for (const score of scores) {
             const { course_id, assessment_id, score: newScoreValue } = score;
-            
+
             // Skip any records from the frontend that don't have a score.
             if (newScoreValue === null || typeof newScoreValue === 'undefined') {
                 console.warn(`Skipping score for assessment_id ${assessment_id} because its value is null or undefined.`);
                 continue;
             }
-            
+
             const newScoreString = newScoreValue.toString();
             const previousScore = existingScoresMap.get(assessment_id) || 'Not Recorded';
 
 
             // If a score has actually changed, log it to the audit table.
             if (previousScore !== newScoreString) {
-                
+
 
                 const [[assessmentInfo]] = await connection.query(
-                    'SELECT c.course_name, a.assessment_name FROM assessments a JOIN courses c ON a.course_id = c.id WHERE a.id = ?', 
+                    'SELECT c.course_name, a.assessment_name FROM assessments a JOIN courses c ON a.course_id = c.id WHERE a.id = ?',
                     [assessment_id]
                 );
-                
-                const description = assessmentInfo 
+
+                const description = assessmentInfo
                     ? `Grade for ${assessmentInfo.course_name} (${assessmentInfo.assessment_name})`
                     : `Grade for assessment ID ${assessment_id}`;
 
@@ -290,7 +311,7 @@ const saveStudentScores = async (req, res) => {
         await connection.commit();
 
         const updatedSummary = await calculateStudentGradeSummary(student_id, year);
-        
+
         res.status(200).json({ success: true, message: 'Scores saved successfully.', data: updatedSummary });
 
     } catch (error) {
@@ -302,6 +323,35 @@ const saveStudentScores = async (req, res) => {
     }
 };
 
+const getMyGrades = async (req, res) => {
+    // Uses the ID from the authenticated token, ensuring users can only see their own grades.
+    const student_id = req.user.id;
+    const { year } = req.query;
+
+    if (!year) {
+        return res.status(400).json({ message: 'Year is required.' });
+    }
+
+    try {
+        // Calculate grades completely independently of current class enrollment.
+        // This solves the issue where changing classes hides past grades.
+        const summary = await calculateStudentGradeSummary(student_id, year);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                student_id,
+                grades: summary.grades,
+                average_score: summary.average_score
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching my grades:', error);
+        res.status(500).json({ message: 'Server error while fetching grades.' });
+    }
+};
+
 module.exports = {
     getCourses,
     addCourse,
@@ -310,4 +360,5 @@ module.exports = {
     saveAssessmentsForCourse,
     getStudentsWithGrades,
     saveStudentScores,
+    getMyGrades,
 };

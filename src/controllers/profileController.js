@@ -8,7 +8,7 @@ const path = require('path');
  * This version is corrected to match the final database schema.
  */
 const logChanges = async (connection, userId, oldProfile, newProfileData) => {
-    const fieldsToLog = [ 'full_name', 'christian_name', 'confession_father_name', 'mother_name', 'gender', 'age', 'academic_level', 'phone_number', 'dob', 'parent_name', 'parent_phone_number', 'kifil' ];
+    const fieldsToLog = ['full_name', 'christian_name', 'confession_father_name', 'mother_name', 'gender', 'age', 'academic_level', 'phone_number', 'dob', 'parent_name', 'parent_phone_number', 'kifil'];
     for (const field of fieldsToLog) {
         const oldValue = oldProfile[field] ? oldProfile[field].toString() : '';
         const newValue = newProfileData[field] ? newProfileData[field].toString() : '';
@@ -32,7 +32,7 @@ const logChanges = async (connection, userId, oldProfile, newProfileData) => {
             const newValue = newOption ? newOption.option_value : '';
 
             if (oldValue !== newValue) {
-                 await connection.query('INSERT INTO change_logs (user_id, changed_by_user_id, field_name, old_value, new_value) VALUES (?, ?, ?, ?, ?)', [userId, userId, `Custom: ${fieldInfo.name}`, oldValue, newValue]);
+                await connection.query('INSERT INTO change_logs (user_id, changed_by_user_id, field_name, old_value, new_value) VALUES (?, ?, ?, ?, ?)', [userId, userId, `Custom: ${fieldInfo.name}`, oldValue, newValue]);
             }
         }
     }
@@ -43,22 +43,42 @@ const getMyProfile = async (req, res) => {
         const userId = req.user.id;
         console.log(`[getMyProfile] Fetching profile for user ID: ${userId}`);
 
-        const [[profile]] = await pool.query(`SELECT p.*, u.email, u.role FROM profiles p JOIN users u ON p.user_id = u.id WHERE p.user_id = ?`, [userId]);
+        const [[profile]] = await pool.query(`SELECT p.*, u.email, u.role, u.tenant_id FROM profiles p JOIN users u ON p.user_id = u.id WHERE p.user_id = ?`, [userId]);
         if (!profile) return res.status(404).json({ success: false, message: 'Profile not found.' });
 
         const [[enrollment]] = await pool.query(`SELECT spiritual_class FROM batch_enrollments WHERE user_id = ? AND is_active = 1 LIMIT 1`, [userId]);
         profile.spiritual_class = enrollment ? enrollment.spiritual_class : profile.spiritual_class;
-        
-        // --- THIS IS THE CRITICAL FIX ---
-        // This query was flawed or missing in previous versions. This is the correct one.
-        const [customValues] = await pool.query('SELECT field_id, option_id FROM custom_field_values WHERE user_id = ?', [userId]);
-        
-        // Attach the array (even if empty) to the profile object.
-        profile.custom_field_values = customValues;
+
+        // Fetch human-readable custom fields (LEFT JOIN to show all tenant fields even if empty)
+        // Fetch human-readable custom fields AND raw IDs
+        try {
+            // 1. Readable Details (for Settings Screen & Profile Screen)
+            const [customFieldsRows] = await pool.query(`
+                SELECT 
+                    cf.name as field_name, 
+                    cfo.option_value as field_value,
+                    cf.profile_tab
+                FROM custom_fields cf
+                LEFT JOIN custom_field_values cfv ON cf.id = cfv.field_id AND cfv.user_id = ?
+                LEFT JOIN custom_field_options cfo ON cfv.option_id = cfo.id
+                WHERE cf.tenant_id = ?
+            `, [userId, profile.tenant_id]);
+
+            profile.custom_fields_detail = customFieldsRows;
+
+            // 2. Raw IDs (for Profile Screen logic)
+            const [customValues] = await pool.query('SELECT field_id, option_id FROM custom_field_values WHERE user_id = ?', [userId]);
+            profile.custom_field_values = customValues;
+
+            console.log(`[getMyProfile] Fetched ${customFieldsRows.length} details and ${customValues.length} raw values.`);
+        } catch (err) {
+            console.error("[getMyProfile] Error fetching custom fields:", err);
+            profile.custom_fields_detail = [];
+            profile.custom_field_values = [];
+        }
 
         console.log(`[getMyProfile] SUCCESS: Sending profile data for user ${userId}.`);
-        console.log(`[getMyProfile] Custom field values sent:`, JSON.stringify(profile.custom_field_values, null, 2));
-        
+
         res.status(200).json({ success: true, data: profile });
     } catch (error) {
         console.error("[getMyProfile] FATAL ERROR:", error);
@@ -71,7 +91,7 @@ const updateMyProfile = async (req, res) => {
     try {
         const userId = req.user.id;
         const newProfileData = req.body;
-        
+
         await connection.beginTransaction();
         const [[oldProfile]] = await connection.query('SELECT * FROM profiles WHERE user_id = ?', [userId]);
         if (!oldProfile) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Profile not found.' }); }
@@ -94,15 +114,15 @@ const updateMyProfile = async (req, res) => {
                 }
             }
         }
-        
+
         await connection.commit();
         res.status(200).json({ success: true, message: 'Profile updated successfully.' });
     } catch (error) {
-        if(connection) await connection.rollback();
+        if (connection) await connection.rollback();
         console.error("[updateMyProfile] FATAL ERROR:", error);
         res.status(500).json({ success: false, message: "Server error while updating profile." });
     } finally {
-        if(connection) connection.release();
+        if (connection) connection.release();
     }
 };
 
@@ -166,8 +186,8 @@ const updateBookStatus = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: "Server error updating book status." }); }
 };
 
-module.exports = { 
-    getMyProfile, 
+module.exports = {
+    getMyProfile,
     updateMyProfile,
     uploadAvatar,
     getMyAttendance,

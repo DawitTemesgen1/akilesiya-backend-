@@ -85,7 +85,7 @@ const searchUsers = async (req, res) => {
 const getPlatformAnalytics = async (req, res) => {
     try {
         const { period = '30d' } = req.query;
-        
+
         // Calculate date range based on period
         let dateRange;
         switch (period) {
@@ -186,7 +186,7 @@ const getSystemSettings = async (req, res) => {
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                     )
                 `);
-                
+
                 // Insert default settings
                 const defaultSettings = [
                     ['platform_name', 'Amde Haymanot Sunday School System', 'string', 'Display name for the platform'],
@@ -205,7 +205,7 @@ const getSystemSettings = async (req, res) => {
                         [key, value, type, desc]
                     );
                 }
-                
+
                 return [defaultSettings.map(([key, value, type]) => ({ setting_key: key, setting_value: value, data_type: type }))];
             }
             throw error;
@@ -248,13 +248,13 @@ const updateSystemSettings = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         const settings = req.body;
-        
+
         await connection.beginTransaction();
 
         for (const [key, value] of Object.entries(settings)) {
             let stringValue;
             let dataType = 'string';
-            
+
             if (typeof value === 'boolean') {
                 stringValue = value.toString();
                 dataType = 'boolean';
@@ -339,10 +339,10 @@ const toggleUserStatus = async (req, res) => {
 
         // Log the action
         const action = is_active ? 'USER_ACTIVATED' : 'USER_DEACTIVATED';
-        const description = is_active ? 
+        const description = is_active ?
             `Activated user: ${user.full_name} (${user.email}) in ${user.school_name}` :
             `Deactivated user: ${user.full_name} (${user.email}) in ${user.school_name}`;
-        
+
         await connection.query(
             `INSERT INTO system_audit_logs (system_admin_id, action_type, action_description, affected_tenant_id, affected_user_id, ip_address, user_agent) 
              VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -419,7 +419,7 @@ const getUserDetails = async (req, res) => {
                 attendanceSummary: attendanceSummary[0],
                 statistics: {
                     total_attendance: attendanceSummary[0]?.total_records || 0,
-                    attendance_rate: attendanceSummary[0]?.total_records ? 
+                    attendance_rate: attendanceSummary[0]?.total_records ?
                         (attendanceSummary[0].present_count / attendanceSummary[0].total_records * 100).toFixed(1) : 0
                 }
             }
@@ -534,7 +534,7 @@ const getAllSchools = async (req, res) => {
         // Get total count for pagination
         let countQuery = `SELECT COUNT(*) as total FROM tenants t`;
         const countParams = [];
-        
+
         if (whereConditions.length > 0) {
             countQuery += ` WHERE ${whereConditions.join(' AND ')}`;
             countParams.push(...queryParams.slice(0, -2)); // Remove limit and offset
@@ -645,9 +645,10 @@ const createSchool = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         const {
-            name, description, address, phone, email, 
+            name, description, address, phone, email,
             pastor_name, service_times, established_date,
-            primary_color = '#012564', accent_color = '#FFD700'
+            primary_color = '#012564', accent_color = '#FFD700',
+            logo_url, motto, founding_year
         } = req.body;
 
         if (!name) {
@@ -658,9 +659,9 @@ const createSchool = async (req, res) => {
 
         const schoolId = require('uuid').v4();
         await connection.query(
-            `INSERT INTO tenants (id, name, description, address, phone, email, pastor_name, service_times, established_date, primary_color, accent_color) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [schoolId, name, description, address, phone, email, pastor_name, service_times, established_date, primary_color, accent_color]
+            `INSERT INTO tenants (id, name, description, address, phone, email, pastor_name, service_times, established_date, primary_color, accent_color, logo_url, motto, founding_year) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [schoolId, name, description, address, phone, email, pastor_name, service_times, established_date, primary_color, accent_color, logo_url, motto, founding_year]
         );
 
         // Log the action
@@ -758,7 +759,7 @@ const toggleSchoolStatus = async (req, res) => {
         // Log the action
         const action = is_active ? 'SCHOOL_ACTIVATED' : 'SCHOOL_DEACTIVATED';
         const description = is_active ? `Activated school: ${school[0].name}` : `Deactivated school: ${school[0].name}`;
-        
+
         await connection.query(
             `INSERT INTO system_audit_logs (system_admin_id, action_type, action_description, affected_tenant_id, ip_address, user_agent) 
              VALUES (?, ?, ?, ?, ?, ?)`,
@@ -932,12 +933,12 @@ const removeSuperiorAdmin = async (req, res) => {
 
         // Remove superior_admin role
         currentRoles.delete('superior_admin');
-        
+
         // If no roles left, add 'user' role
         if (currentRoles.size === 0) {
             currentRoles.add('user');
         }
-        
+
         const newRole = Array.from(currentRoles).join(',');
 
         await connection.query('UPDATE users SET role = ? WHERE id = ?', [newRole, userId]);
@@ -971,7 +972,7 @@ const removeSuperiorAdmin = async (req, res) => {
 module.exports = {
     // Dashboard and Overview
     getSystemDashboard,
-    
+
     // School Management
     getAllSchools,
     getSchoolDetail,
@@ -979,12 +980,12 @@ module.exports = {
     updateSchool,
     toggleSchoolStatus,
     promoteToSuperiorAdmin,
-    
+
     // User Management
     searchUsers,
     getUserDetails,
     toggleUserStatus,
-    
+
     // Analytics and Settings
     getPlatformAnalytics,
     getSystemSettings,

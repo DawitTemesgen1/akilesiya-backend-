@@ -7,7 +7,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
-const path = require('path'); 
+const path = require('path');
 
 // Load environment variables from the .env file into process.env
 dotenv.config();
@@ -27,15 +27,16 @@ const developmentRoutes = require('./routes/developmentRoutes');
 const familyRoutes = require('./routes/familyRoutes');
 const privateFeedRoutes = require('./routes/privateFeedRoutes');
 const learningRoutes = require('./routes/learningRoutes');
-const uploadRoutes = require('./routes/uploadRoutes'); 
-const publicFeedRoutes = require('./routes/publicFeedRoutes'); 
-const profileRoutes = require('./routes/profileRoutes'); 
-const userAdminRoutes = require('./routes/userAdminRoutes'); 
+const uploadRoutes = require('./routes/uploadRoutes');
+const publicFeedRoutes = require('./routes/publicFeedRoutes');
+const profileRoutes = require('./routes/profileRoutes');
+const userAdminRoutes = require('./routes/userAdminRoutes');
 const templateRoutes = require('./routes/templateRoutes');
-const auditRoutes = require('./routes/auditRoutes'); 
-const screenTimeRoutes = require('./routes/screenTimeRoutes'); 
+const auditRoutes = require('./routes/auditRoutes');
+const screenTimeRoutes = require('./routes/screenTimeRoutes');
 const systemAdminRoutes = require('./routes/systemAdminRoutes');
-const platformLinksRoutes = require('./routes/platformLinksRoutes'); 
+const platformLinksRoutes = require('./routes/platformLinksRoutes');
+const permissionRoutes = require('./routes/permissionRoutes');
 
 // Initialize the Express application
 const app = express();
@@ -65,15 +66,16 @@ app.use('/api/family', familyRoutes);
 app.use('/api/private-feed', privateFeedRoutes);
 app.use('/api/learning', learningRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/upload', uploadRoutes); 
-app.use('/api/public-feed', publicFeedRoutes); 
-app.use('/api/profile', profileRoutes); 
-app.use('/api/user-admin', userAdminRoutes); 
+app.use('/api/upload', uploadRoutes);
+app.use('/api/public-feed', publicFeedRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/user-admin', userAdminRoutes);
 app.use('/api/template', templateRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/screentime', screenTimeRoutes);
 app.use('/api/system-admin', systemAdminRoutes);
-app.use('/api/platform-links', platformLinksRoutes); 
+app.use('/api/platform-links', platformLinksRoutes);
+app.use('/api/admin/permissions', permissionRoutes);
 
 // --- Health Check Endpoint ---
 app.get('/api/health', (req, res) => {

@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { 
+const {
     getStudentsWithGrades,
     getCourses, addCourse, deleteCourse,
     getAssessmentsForCourse,
     saveAssessmentsForCourse,
-    saveStudentScores
+    saveStudentScores,
+    getMyGrades
 } = require('../controllers/gradeController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -13,6 +14,13 @@ const { protect } = require('../middleware/authMiddleware');
 // Import the correct 'isAdmin' function from the correct middleware file.
 const { isAdmin } = require('../middleware/adminMiddleware');
 // =======================================================
+
+
+// --- Public/User Routes (Authenticated) ---
+// This route allows a student to fetch their own grades summary.
+// It searches based on their user ID in the grade records, completely ignoring
+// their current class enrollment, ensuring past grades are preserved.
+router.get('/my-grades', protect, getMyGrades);
 
 
 // --- Use the correct middleware ---

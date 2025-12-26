@@ -1,18 +1,19 @@
 // routes/templateRoutes.js
 const express = require('express');
 const router = express.Router();
-const { protect, superiorAdmin } = require('../middleware/authMiddleware'); 
+const { protect, superiorAdmin } = require('../middleware/authMiddleware');
 const {
     createCustomField, getCustomFields, updateCustomField, deleteCustomField,
     createFieldOption, updateFieldOption, deleteFieldOption
 } = require('../controllers/templateController');
 
+// Public/Protected read access for rendering forms
+router.get('/fields', protect, getCustomFields);
+
+// Admin only operations
 router.use(protect, superiorAdmin); // All template editing requires admin
 
-// Routes for managing the Custom Fields (e.g., 'Tiwulid', 'Member Level')
-router.route('/fields')
-    .post(createCustomField)
-    .get(getCustomFields);
+router.post('/fields', createCustomField);
 
 router.route('/fields/:fieldId')
     .put(updateCustomField)

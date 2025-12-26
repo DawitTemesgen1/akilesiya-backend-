@@ -47,7 +47,42 @@ const createTenant = async (req, res) => {
     }
 };
 
+// @desc    Get custom fields for a specific tenant (Public)
+// @route   GET /api/tenants/:tenantId/custom-fields
+// @access  Public
+const getTenantCustomFields = async (req, res) => {
+    try {
+        const { tenantId } = req.params;
+
+        // Fetch fields
+        const [fields] = await pool.query(
+            'SELECT id, name, type, managed_by, profile_tab FROM custom_fields WHERE tenant_id = ? ORDER BY id',
+            [tenantId]
+        );
+
+        if (fields.length === 0) {
+            return res.status(200).json({ success: true, data: [] });
+        }
+
+        // Fetch options for these fields
+        const fieldIds = fields.map(f => f.id);
+        const [options] = await pool.query('SELECT * FROM custom_field_options WHERE field_id IN (?)', [fieldIds]);
+
+        // Structure the response
+        const structuredFields = fields.map(field => ({
+            ...field,
+            options: options.filter(opt => opt.field_id === field.id)
+        }));
+
+        res.status(200).json({ success: true, data: structuredFields });
+    } catch (error) {
+        console.error("Get Tenant Custom Fields Error:", error);
+        res.status(500).json({ success: false, message: 'Server error fetching custom fields.' });
+    }
+};
+
 module.exports = {
     getTenants,
     createTenant,
+    getTenantCustomFields,
 };
