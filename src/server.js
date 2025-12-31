@@ -54,7 +54,13 @@ app.use(express.json());
 // --- ADD THIS MIDDLEWARE ---
 // This makes the 'public' folder accessible from the web.
 // For example, an image at 'public/uploads/image.jpg' will be available at 'http://yourserver.com/uploads/image.jpg'
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, path, stat) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+}));
 // -------------------------
 
 // --- API Route Mounting ---
