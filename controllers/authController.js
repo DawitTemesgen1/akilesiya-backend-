@@ -405,14 +405,8 @@ const forgotPassword = async (req, res) => {
     }
 
     try {
-        // Fetch user with profile and tenant info
-        const [users] = await pool.query(`
-            SELECT u.*, p.full_name, t.name as tenant_name 
-            FROM users u
-            LEFT JOIN profiles p ON u.id = p.user_id
-            LEFT JOIN tenants t ON u.tenant_id = t.id
-            WHERE u.email = ?
-        `, [email]);
+        // First, check if user exists
+        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
 
         if (users.length === 0) {
             return res.status(404).json({ success: false, message: 'User not found.' });
@@ -426,12 +420,34 @@ const forgotPassword = async (req, res) => {
 
         await pool.query('UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?', [otp, otpExpires, user.id]);
 
+        // Try to get personalization data (with fallbacks)
+        let userName = 'User';
+        let tenantName = 'Akilesiya';
+
+        try {
+            // Fetch profile name
+            const [profiles] = await pool.query('SELECT full_name FROM profiles WHERE user_id = ?', [user.id]);
+            if (profiles.length > 0 && profiles[0].full_name) {
+                userName = profiles[0].full_name;
+            }
+
+            // Fetch tenant name
+            if (user.tenant_id) {
+                const [tenants] = await pool.query('SELECT name FROM tenants WHERE id = ?', [user.tenant_id]);
+                if (tenants.length > 0 && tenants[0].name) {
+                    tenantName = tenants[0].name;
+                }
+            }
+        } catch (personalizationError) {
+            console.warn('Could not fetch personalization data, using defaults:', personalizationError.message);
+        }
+
         // Send OTP via Email with personalization
-        const userName = user.full_name || 'User';
-        const tenantName = user.tenant_name || 'Akilesiya';
+        console.log(`Sending forgot password OTP to ${email} (User: ${userName}, Tenant: ${tenantName})`);
         const emailSent = await sendEmailOTP(email, otp, userName, tenantName);
 
         if (!emailSent) {
+            console.error('❌ Email sending failed for forgot password');
             return res.status(500).json({ success: false, message: 'Failed to send OTP email. Please check server configuration.' });
         }
 
@@ -442,7 +458,7 @@ const forgotPassword = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Forgot Password error:', error);
+        console.error('❌ Forgot Password error:', error);
         res.status(500).json({ success: false, message: 'Server error during password reset request.' });
     }
 };
