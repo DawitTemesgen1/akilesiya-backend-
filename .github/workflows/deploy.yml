@@ -32,7 +32,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /public_html/api/ # CHANGE THIS to your actual path on the server
+          server-dir: / # We assume the FTP user 'akilesiya@...' is explicitly rooted to the project folder
           exclude: |
             **/.git*
             **/.git*/**
