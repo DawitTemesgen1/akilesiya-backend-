@@ -47,10 +47,19 @@ const app = express();
 // --- Global Middlewares ---
 // AGGRESSIVE CORS FIX: Manually set headers for EVERY request
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin;
+
+  // Allow any origin by echoing it back
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    // Fallback for non-browser requests or initial loads
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE");
   res.setHeader("Access-Control-Allow-Headers", "X-Requested-With,content-type,Authorization");
-  res.setHeader("Access-Control-Allow-Credentials", true);
+  res.setHeader("Access-Control-Allow-Credentials", true); // Required for cookies/auth headers
 
   // Handle preflight OPTIONS requests immediately
   if (req.method === 'OPTIONS') {
@@ -60,7 +69,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+app.use(cors({
+  origin: true, // Reflects request origin
+  credentials: true
+}));
 // app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } })); // TEMPORARILY DISABLED
 app.use(compression()); // Compress responses
 app.use(morgan('dev')); // Logging
@@ -68,9 +80,9 @@ app.use(express.json());
 
 // --- ADD THIS MIDDLEWARE ---
 // This makes the 'public' folder accessible from the web.
-// For example, an image at 'public/uploads/image.jpg' will be available at 'http://yourserver.com/uploads/image.jpg'
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, path, stat) => {
+    // Static files usually don't need credentials, but we interpret leniently
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
