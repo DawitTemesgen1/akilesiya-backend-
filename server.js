@@ -78,17 +78,21 @@ app.use(compression()); // Compress responses
 app.use(morgan('dev')); // Logging
 app.use(express.json());
 
-// --- ADD THIS MIDDLEWARE ---
-// This makes the 'public' folder accessible from the web.
-app.use(express.static(path.join(__dirname, 'public'), {
-  setHeaders: (res, path, stat) => {
-    // Static files usually don't need credentials, but we interpret leniently
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  }
-}));
-// -------------------------
+// --- SERVE UPLOADS WITH CORS ---
+// Explicitly serve the uploads directory with robust CORS headers
+app.use('/uploads', (req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+});
+
+// Serve the 'public/uploads' directory at the '/uploads' path
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+
+// Serve other static files from 'public' (if any)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // --- API Route Mounting ---
 app.use('/api/auth', authRoutes);
