@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
-const { sendOTP } = require('../services/smsService');
+const { sendEmailOTP } = require('../services/emailService');
 require('dotenv').config();
 
 // Helper: Generate 6-digit OTP
@@ -18,14 +18,15 @@ const generateToken = (id, role, tenant_id) => {
     });
 };
 
-// @desc    Register a new user via Phone + OTP
+// @desc    Register a new user via Email + OTP
 // @route   POST /api/auth/register
 // @access  Public
 const registerUser = async (req, res) => {
     const {
         tenantName,
         fullName,
-        phone,
+        email,
+        phone, // Optional now, if sent
         // Additional profile fields
         christianName,
         confessionFatherName,
@@ -38,8 +39,8 @@ const registerUser = async (req, res) => {
         spiritualClass
     } = req.body;
 
-    if (!tenantName || !fullName || !phone) {
-        return res.status(400).json({ success: false, message: 'Please provide school, name, and phone number.' });
+    if (!tenantName || !fullName || !email) {
+        return res.status(400).json({ success: false, message: 'Please provide school, name, and email address.' });
     }
 
     const connection = await pool.getConnection();
@@ -55,10 +56,10 @@ const registerUser = async (req, res) => {
         const tenantId = tenants[0].id;
 
         // 2. Check if user exists
-        const [existingUsers] = await connection.query('SELECT id FROM users WHERE phone_number = ?', [phone]);
+        const [existingUsers] = await connection.query('SELECT id FROM users WHERE email = ?', [email]);
         if (existingUsers.length > 0) {
             await connection.rollback();
-            return res.status(409).json({ success: false, message: 'A user with this phone number already exists. Please login.' });
+            return res.status(409).json({ success: false, message: 'A user with this email already exists. Please login.' });
         }
 
         // 3. Create User
@@ -66,9 +67,10 @@ const registerUser = async (req, res) => {
         const otp = generateOTP();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
+        // Insert into email column. Phone might be null.
         await connection.query(
-            'INSERT INTO users (id, tenant_id, phone_number, role, is_active, otp_code, otp_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [userId, tenantId, phone, 'user', true, otp, otpExpires]
+            'INSERT INTO users (id, tenant_id, email, phone_number, role, is_active, otp_code, otp_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [userId, tenantId, email, phone || null, 'user', true, otp, otpExpires]
         );
 
         // 4. Create Profile with all fields
@@ -81,7 +83,7 @@ const registerUser = async (req, res) => {
             [
                 userId,
                 fullName,
-                phone,
+                phone || null, // Profile phone
                 christianName || null,
                 confessionFatherName || null,
                 motherName || null,
@@ -110,13 +112,21 @@ const registerUser = async (req, res) => {
 
         await connection.commit();
 
-        // 5. Send OTP
-        await sendOTP(phone, otp);
+        // 5. Send OTP via Email
+        const emailSent = await sendEmailOTP(email, otp);
+
+        if (!emailSent) {
+            return res.status(500).json({
+                success: false,
+                message: 'User registered, but failed to send verification email. Please check server logs or try resending OTP.',
+                data: { email }
+            });
+        }
 
         res.status(201).json({
             success: true,
-            message: 'User registered. Please verify OTP.',
-            data: { phone }
+            message: 'User registered. Please verify OTP sent to your email.',
+            data: { email }
         });
 
     } catch (error) {
@@ -128,19 +138,19 @@ const registerUser = async (req, res) => {
     }
 };
 
-// @desc    Login via Phone + Password
+// @desc    Login via Email + Password
 // @route   POST /api/auth/login
 // @access  Public
 const loginUser = async (req, res) => {
-    const { phone, password, tenantName } = req.body;
+    const { email, password, tenantName } = req.body;
 
-    if (!phone || !password) {
-        return res.status(400).json({ success: false, message: 'Please provide phone number and password.' });
+    if (!email || !password) {
+        return res.status(400).json({ success: false, message: 'Please provide email and password.' });
     }
 
     try {
-        // Find user by phone
-        const [userRows] = await pool.query('SELECT * FROM users WHERE phone_number = ?', [phone]);
+        // Find user by email
+        const [userRows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
 
         if (userRows.length === 0) {
             return res.status(404).json({ success: false, message: 'User not found. Please register.' });
@@ -180,7 +190,7 @@ const loginUser = async (req, res) => {
                 tenant: tenant[0],
                 user: {
                     id: user.id,
-                    phone: user.phone_number,
+                    email: user.email,
                     role: user.role
                 }
             }
@@ -196,14 +206,14 @@ const loginUser = async (req, res) => {
 // @route   POST /api/auth/verify-otp
 // @access  Public
 const verifyOTP = async (req, res) => {
-    const { phone, otp } = req.body;
+    const { email, otp } = req.body;
 
-    if (!phone || !otp) {
-        return res.status(400).json({ success: false, message: 'Phone and OTP are required.' });
+    if (!email || !otp) {
+        return res.status(400).json({ success: false, message: 'Email and OTP are required.' });
     }
 
     try {
-        const [users] = await pool.query('SELECT * FROM users WHERE phone_number = ?', [phone]);
+        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
         if (users.length === 0) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
@@ -239,7 +249,7 @@ const verifyOTP = async (req, res) => {
                 tenant: tenant[0],
                 user: {
                     id: user.id,
-                    phone: user.phone_number,
+                    email: user.email,
                     role: user.role
                 }
             }
@@ -255,10 +265,10 @@ const verifyOTP = async (req, res) => {
 // @route   POST /api/auth/set-password
 // @access  Public (but requires valid OTP verification first)
 const setPassword = async (req, res) => {
-    const { phone, password } = req.body;
+    const { email, password } = req.body;
 
-    if (!phone || !password) {
-        return res.status(400).json({ success: false, message: 'Phone and password are required.' });
+    if (!email || !password) {
+        return res.status(400).json({ success: false, message: 'Email and password are required.' });
     }
 
     if (password.length < 6) {
@@ -266,7 +276,7 @@ const setPassword = async (req, res) => {
     }
 
     try {
-        const [users] = await pool.query('SELECT * FROM users WHERE phone_number = ?', [phone]);
+        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
         if (users.length === 0) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
@@ -295,14 +305,14 @@ const setPassword = async (req, res) => {
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = async (req, res) => {
-    const { phone } = req.body;
+    const { email } = req.body;
 
-    if (!phone) {
-        return res.status(400).json({ success: false, message: 'Phone number is required.' });
+    if (!email) {
+        return res.status(400).json({ success: false, message: 'Email is required.' });
     }
 
     try {
-        const [users] = await pool.query('SELECT * FROM users WHERE phone_number = ?', [phone]);
+        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
         if (users.length === 0) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
@@ -315,13 +325,17 @@ const forgotPassword = async (req, res) => {
 
         await pool.query('UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?', [otp, otpExpires, user.id]);
 
-        // Send OTP
-        await sendOTP(phone, otp);
+        // Send OTP via Email
+        const emailSent = await sendEmailOTP(email, otp);
+
+        if (!emailSent) {
+            return res.status(500).json({ success: false, message: 'Failed to send OTP email. Please check server configuration.' });
+        }
 
         res.status(200).json({
             success: true,
-            message: 'OTP sent to your phone for password reset.',
-            data: { phone }
+            message: 'OTP sent to your email for password reset.',
+            data: { email }
         });
 
     } catch (error) {
@@ -334,10 +348,10 @@ const forgotPassword = async (req, res) => {
 // @route   POST /api/auth/reset-password
 // @access  Public
 const resetPassword = async (req, res) => {
-    const { phone, otp, newPassword } = req.body;
+    const { email, otp, newPassword } = req.body;
 
-    if (!phone || !otp || !newPassword) {
-        return res.status(400).json({ success: false, message: 'Phone, OTP, and new password are required.' });
+    if (!email || !otp || !newPassword) {
+        return res.status(400).json({ success: false, message: 'Email, OTP, and new password are required.' });
     }
 
     if (newPassword.length < 6) {
@@ -345,7 +359,7 @@ const resetPassword = async (req, res) => {
     }
 
     try {
-        const [users] = await pool.query('SELECT * FROM users WHERE phone_number = ?', [phone]);
+        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
         if (users.length === 0) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
@@ -386,18 +400,22 @@ const resetPassword = async (req, res) => {
 // @route   POST /api/auth/resend-otp
 // @access  Public
 const resendOTP = async (req, res) => {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ success: false, message: 'Phone number required' });
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email required' });
 
     try {
-        const [users] = await pool.query('SELECT id FROM users WHERE phone_number = ?', [phone]);
+        const [users] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
         if (users.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
 
         const otp = generateOTP();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
         await pool.query('UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?', [otp, otpExpires, users[0].id]);
-        await sendOTP(phone, otp);
+        const emailSent = await sendEmailOTP(email, otp);
+
+        if (!emailSent) {
+            return res.status(500).json({ success: false, message: 'Failed to resend OTP email.' });
+        }
 
         res.status(200).json({ success: true, message: 'OTP Resent' });
     } catch (e) {
@@ -415,7 +433,7 @@ const getMe = async (req, res) => {
             SELECT 
                 u.id,
                 u.email,
-                u.phone_number, -- Added phone number to selection
+                u.phone_number, -- Keep fetching phone if needed
                 u.role,
                 u.tenant_id,
                 p.full_name,
@@ -459,7 +477,6 @@ const getMe = async (req, res) => {
                 WHERE cf.tenant_id = ?
             `, [req.user.id, req.user.tenant_id]);
 
-            console.log(`DEBUG: Custom fields for user ${req.user.id}:`, customFieldsRows);
             userProfile.custom_fields_detail = customFieldsRows;
 
             // Raw IDs for compatibility

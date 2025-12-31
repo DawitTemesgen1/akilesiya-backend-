@@ -8,6 +8,9 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const compression = require('compression');
 
 // Load environment variables from the .env file into process.env
 dotenv.config();
@@ -43,6 +46,9 @@ const app = express();
 
 // --- Global Middlewares ---
 app.use(cors());
+app.use(helmet()); // Security headers
+app.use(compression()); // Compress responses
+app.use(morgan('dev')); // Logging
 app.use(express.json());
 
 // --- ADD THIS MIDDLEWARE ---
@@ -78,8 +84,17 @@ app.use('/api/platform-links', platformLinksRoutes);
 app.use('/api/admin/permissions', permissionRoutes);
 
 // --- Health Check Endpoint ---
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+});
+
+// --- Global Error Handler ---
+app.use((err, req, res, next) => {
+  console.error('❌ Server Error:', err.stack);
+  res.status(500).json({
+    success: false,
+    message: 'Internal Server Error',
+    error: process.env.NODE_ENV === 'production' ? null : err.message
+  });
 });
 
 // --- Server Initialization ---

@@ -1,0 +1,40 @@
+name: Deploy Backend to cPanel
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  web-deploy:
+    name: 🎉 Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Get latest code
+        uses: actions/checkout@v3
+
+      - name: 🔨 Install Dependencies (Clean)
+        run: |
+          cd src
+          npm ci --production
+        # Note: If you cannot run npm install on the server via cPanel nodejs selector,
+        # you might need to upload node_modules. 
+        # However, it is BEST practice to install on the server.
+        # For FTP deployment, usually we deploy the source and let the server handle modules,
+        # OR we build here and upload everything including node_modules if the architecture matches.
+        # Since cPanel Node.js usually runs on Linux, and actions run on Linux, uploading node_modules is risky but possible.
+        # For now, let's just upload the source code and assume user runs npm install on cPanel or has it automated.
+      
+      - name: 📂 Sync files
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /public_html/api/ # CHANGE THIS to your actual path on the server
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            .env
