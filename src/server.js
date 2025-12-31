@@ -84,7 +84,8 @@ app.use('/api/platform-links', platformLinksRoutes);
 app.use('/api/admin/permissions', permissionRoutes);
 
 // --- Health Check Endpoint ---
-res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
 });
 
 // --- Global Error Handler ---
