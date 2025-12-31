@@ -46,7 +46,9 @@ const app = express();
 
 // --- Global Middlewares ---
 app.use(cors());
-app.use(helmet()); // Security headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+})); // Security headers with relaxed CORP for images
 app.use(compression()); // Compress responses
 app.use(morgan('dev')); // Logging
 app.use(express.json());
