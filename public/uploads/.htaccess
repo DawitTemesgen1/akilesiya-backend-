@@ -1,0 +1,13 @@
+# Enable CORS for all image requests
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization"
+    Header set Cross-Origin-Resource-Policy "cross-origin"
+</IfModule>
+
+# Ensure proper MIME types for images
+<IfModule mod_mime.c>
+    AddType image/jpeg .jpg .jpeg
+    AddType image/png .png
+</IfModule>
