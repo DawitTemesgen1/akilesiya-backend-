@@ -45,10 +45,17 @@ const permissionRoutes = require('./routes/permissionRoutes');
 const app = express();
 
 // --- Global Middlewares ---
+// AGGRESSIVE CORS FIX: Manually set headers for EVERY request
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE");
+  res.setHeader("Access-Control-Allow-Headers", "X-Requested-With,content-type");
+  res.setHeader("Access-Control-Allow-Credentials", true);
+  next();
+});
+
 app.use(cors());
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-})); // Security headers with relaxed CORP for images
+// app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } })); // TEMPORARILY DISABLED
 app.use(compression()); // Compress responses
 app.use(morgan('dev')); // Logging
 app.use(express.json());
