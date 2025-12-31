@@ -18,7 +18,7 @@ const generateToken = (id, role, tenant_id) => {
     });
 };
 
-// @desc    Register a new user via Email + OTP
+// @desc    Register a new user via Email + OTP (OTP-First Flow)
 // @route   POST /api/auth/register
 // @access  Public
 const registerUser = async (req, res) => {
@@ -26,8 +26,7 @@ const registerUser = async (req, res) => {
         tenantName,
         fullName,
         email,
-        phone, // Optional now, if sent
-        // Additional profile fields
+        phone,
         christianName,
         confessionFatherName,
         motherName,
@@ -36,7 +35,8 @@ const registerUser = async (req, res) => {
         academicLevel,
         parentName,
         parentPhone,
-        spiritualClass
+        spiritualClass,
+        customFields
     } = req.body;
 
     if (!tenantName || !fullName || !email) {
@@ -48,84 +48,77 @@ const registerUser = async (req, res) => {
         await connection.beginTransaction();
 
         // 1. Check Tenant
-        let [tenants] = await connection.query('SELECT id FROM tenants WHERE name = ?', [tenantName]);
+        let [tenants] = await connection.query('SELECT id, name FROM tenants WHERE name = ?', [tenantName]);
         if (tenants.length === 0) {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'School not found.' });
         }
         const tenantId = tenants[0].id;
+        const tenantDisplayName = tenants[0].name;
 
-        // 2. Check if user exists
+        // 2. Check if user already exists
         const [existingUsers] = await connection.query('SELECT id FROM users WHERE email = ?', [email]);
         if (existingUsers.length > 0) {
             await connection.rollback();
-            return res.status(409).json({ success: false, message: 'A user with this email already exists. Please login.' });
+            return res.status(409).json({ success: false, message: 'A user with this email already exists. Please login or use forgot password.' });
         }
 
-        // 3. Create User
-        const userId = uuidv4();
+        // 3. Check if there's a pending registration
+        const [pendingRegs] = await connection.query(
+            'SELECT id FROM pending_registrations WHERE email = ? AND otp_expires_at > NOW()',
+            [email]
+        );
+
         const otp = generateOTP();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+        const registrationData = JSON.stringify({
+            tenantId,
+            tenantName,
+            fullName,
+            email,
+            phone: phone || null,
+            christianName: christianName || null,
+            confessionFatherName: confessionFatherName || null,
+            motherName: motherName || null,
+            gender: gender || null,
+            dob: dob || null,
+            academicLevel: academicLevel || null,
+            parentName: parentName || null,
+            parentPhone: parentPhone || null,
+            spiritualClass: spiritualClass || null,
+            customFields: customFields || null
+        });
 
-        // Insert into email column. Phone might be null.
-        await connection.query(
-            'INSERT INTO users (id, tenant_id, email, phone_number, role, is_active, otp_code, otp_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [userId, tenantId, email, phone || null, 'user', true, otp, otpExpires]
-        );
-
-        // 4. Create Profile with all fields
-        await connection.query(
-            `INSERT INTO profiles (
-                user_id, full_name, phone_number, christian_name, 
-                confession_father_name, mother_name, gender, dob, 
-                academic_level, parent_name, parent_phone_number, spiritual_class
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                userId,
-                fullName,
-                phone || null, // Profile phone
-                christianName || null,
-                confessionFatherName || null,
-                motherName || null,
-                gender || null,
-                dob || null,
-                academicLevel || null,
-                parentName || null,
-                parentPhone || null,
-                spiritualClass || null
-            ]
-        );
-
-        // 5. Save Custom Fields
-        const { customFields } = req.body;
-        if (customFields && typeof customFields === 'object') {
-            for (const fieldId in customFields) {
-                const optionId = customFields[fieldId];
-                if (optionId) {
-                    await connection.query(
-                        'INSERT INTO custom_field_values (user_id, field_id, option_id) VALUES (?, ?, ?)',
-                        [userId, fieldId, optionId]
-                    );
-                }
-            }
+        if (pendingRegs.length > 0) {
+            // Update existing pending registration
+            await connection.query(
+                'UPDATE pending_registrations SET otp_code = ?, otp_expires_at = ?, registration_data = ? WHERE email = ?',
+                [otp, otpExpires, registrationData, email]
+            );
+        } else {
+            // Create new pending registration
+            await connection.query(
+                'INSERT INTO pending_registrations (email, otp_code, otp_expires_at, registration_data) VALUES (?, ?, ?, ?)',
+                [email, otp, otpExpires, registrationData]
+            );
         }
 
         await connection.commit();
 
-        // 5. Send OTP via Email
-        const emailSent = await sendEmailOTP(email, otp);
+        // 4. Send OTP via Email
+        const emailSent = await sendEmailOTP(email, otp, fullName, tenantDisplayName);
 
         if (!emailSent) {
             return res.status(500).json({
                 success: false,
-                message: 'User registered, but failed to send verification email. Please check server logs or try resending OTP.',
+                message: 'Registration initiated, but failed to send verification email. Please try again or contact support.',
                 data: { email }
             });
         }
 
-        res.status(201).json({
+        res.status(200).json({
             success: true,
-            message: 'User registered. Please verify OTP sent to your email.',
+            message: 'Verification code sent to your email. Please verify to complete registration.',
             data: { email }
         });
 
@@ -202,7 +195,7 @@ const loginUser = async (req, res) => {
     }
 };
 
-// @desc    Verify OTP and Get Token
+// @desc    Verify OTP and Complete Registration OR Login
 // @route   POST /api/auth/verify-otp
 // @access  Public
 const verifyOTP = async (req, res) => {
@@ -212,28 +205,124 @@ const verifyOTP = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Email and OTP are required.' });
     }
 
+    const connection = await pool.getConnection();
     try {
-        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+        await connection.beginTransaction();
+
+        // 1. Check if this is a pending registration (new user)
+        const [pendingRegs] = await connection.query(
+            'SELECT * FROM pending_registrations WHERE email = ? AND otp_code = ?',
+            [email, otp]
+        );
+
+        if (pendingRegs.length > 0) {
+            const pending = pendingRegs[0];
+
+            // Check OTP expiry
+            if (new Date() > new Date(pending.otp_expires_at)) {
+                await connection.rollback();
+                return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
+            }
+
+            // Parse registration data
+            const regData = JSON.parse(pending.registration_data);
+
+            // Create the user account
+            const userId = uuidv4();
+            await connection.query(
+                'INSERT INTO users (id, tenant_id, email, phone_number, role, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+                [userId, regData.tenantId, regData.email, regData.phone, 'user', true]
+            );
+
+            // Create profile
+            await connection.query(
+                `INSERT INTO profiles (
+                    user_id, full_name, phone_number, christian_name, 
+                    confession_father_name, mother_name, gender, dob, 
+                    academic_level, parent_name, parent_phone_number, spiritual_class
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    userId,
+                    regData.fullName,
+                    regData.phone,
+                    regData.christianName,
+                    regData.confessionFatherName,
+                    regData.motherName,
+                    regData.gender,
+                    regData.dob,
+                    regData.academicLevel,
+                    regData.parentName,
+                    regData.parentPhone,
+                    regData.spiritualClass
+                ]
+            );
+
+            // Save custom fields if any
+            if (regData.customFields && typeof regData.customFields === 'object') {
+                for (const fieldId in regData.customFields) {
+                    const optionId = regData.customFields[fieldId];
+                    if (optionId) {
+                        await connection.query(
+                            'INSERT INTO custom_field_values (user_id, field_id, option_id) VALUES (?, ?, ?)',
+                            [userId, fieldId, optionId]
+                        );
+                    }
+                }
+            }
+
+            // Delete the pending registration
+            await connection.query('DELETE FROM pending_registrations WHERE id = ?', [pending.id]);
+
+            await connection.commit();
+
+            // Fetch tenant info
+            const [tenant] = await connection.query('SELECT * FROM tenants WHERE id = ?', [regData.tenantId]);
+
+            // Generate token
+            const token = generateToken(userId, 'user', regData.tenantId);
+
+            return res.status(201).json({
+                success: true,
+                message: 'Registration completed successfully!',
+                data: {
+                    token,
+                    tenant: tenant[0],
+                    user: {
+                        id: userId,
+                        email: regData.email,
+                        role: 'user'
+                    }
+                }
+            });
+        }
+
+        // 2. Check if this is an existing user (forgot password flow)
+        const [users] = await connection.query('SELECT * FROM users WHERE email = ?', [email]);
         if (users.length === 0) {
-            return res.status(404).json({ success: false, message: 'User not found.' });
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Invalid email or OTP.' });
         }
 
         const user = users[0];
 
         // Check OTP validity
         if (user.otp_code !== otp) {
+            await connection.rollback();
             return res.status(400).json({ success: false, message: 'Invalid OTP.' });
         }
 
         if (new Date() > new Date(user.otp_expires_at)) {
+            await connection.rollback();
             return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
         }
 
         // OTP Valid! Clear it.
-        await pool.query('UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?', [user.id]);
+        await connection.query('UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?', [user.id]);
+
+        await connection.commit();
 
         // Fetch Tenant info for response
-        const [tenant] = await pool.query('SELECT * FROM tenants WHERE id = ?', [user.tenant_id]);
+        const [tenant] = await connection.query('SELECT * FROM tenants WHERE id = ?', [user.tenant_id]);
 
         if (!tenant || tenant.length === 0) {
             return res.status(500).json({ success: false, message: 'Tenant not found for this user.' });
@@ -244,6 +333,7 @@ const verifyOTP = async (req, res) => {
 
         res.status(200).json({
             success: true,
+            message: 'OTP verified successfully!',
             data: {
                 token,
                 tenant: tenant[0],
@@ -256,8 +346,11 @@ const verifyOTP = async (req, res) => {
         });
 
     } catch (error) {
+        await connection.rollback();
         console.error('Verify OTP error:', error);
         res.status(500).json({ success: false, message: 'Server error during verification.' });
+    } finally {
+        connection.release();
     }
 };
 
