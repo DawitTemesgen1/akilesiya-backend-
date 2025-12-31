@@ -405,7 +405,15 @@ const forgotPassword = async (req, res) => {
     }
 
     try {
-        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+        // Fetch user with profile and tenant info
+        const [users] = await pool.query(`
+            SELECT u.*, p.full_name, t.name as tenant_name 
+            FROM users u
+            LEFT JOIN profiles p ON u.id = p.user_id
+            LEFT JOIN tenants t ON u.tenant_id = t.id
+            WHERE u.email = ?
+        `, [email]);
+
         if (users.length === 0) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
@@ -418,8 +426,10 @@ const forgotPassword = async (req, res) => {
 
         await pool.query('UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?', [otp, otpExpires, user.id]);
 
-        // Send OTP via Email
-        const emailSent = await sendEmailOTP(email, otp);
+        // Send OTP via Email with personalization
+        const userName = user.full_name || 'User';
+        const tenantName = user.tenant_name || 'Akilesiya';
+        const emailSent = await sendEmailOTP(email, otp, userName, tenantName);
 
         if (!emailSent) {
             return res.status(500).json({ success: false, message: 'Failed to send OTP email. Please check server configuration.' });
