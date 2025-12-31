@@ -23,14 +23,22 @@ const sendEmailOTP = async (email, otp, userName = '', tenantName = '') => {
     }
 
     try {
+        const isSecure = smtpPort == 465; // Auto-detect SSL
+
+        console.log(`🔌 Connecting to SMTP: ${smtpHost}:${smtpPort} (Secure: ${isSecure})`);
+
         const transporter = nodemailer.createTransport({
             host: smtpHost,
             port: smtpPort || 587,
-            secure: false, // true for 465, false for other ports
+            secure: isSecure, // true for 465, false for other ports
             auth: {
                 user: smtpUser,
                 pass: smtpPass,
             },
+            // Increase timeout for slow servers
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000
         });
 
         // Personalized greeting
@@ -135,7 +143,10 @@ const sendEmailOTP = async (email, otp, userName = '', tenantName = '') => {
         console.log("✅ Email sent successfully: %s", info.messageId);
         return true;
     } catch (error) {
-        console.error("❌ Failed to send email:", error);
+        console.error("❌ Failed to send email!");
+        console.error("   Error Code:", error.code);
+        console.error("   Error Command:", error.command);
+        console.error("   Full Error:", error);
         return false;
     }
 };
