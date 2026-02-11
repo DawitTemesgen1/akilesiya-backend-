@@ -13,7 +13,7 @@ const createCustomField = async (req, res) => {
         }
 
         const [result] = await pool.query(
-            'INSERT INTO custom_fields (tenant_id, name, type, managed_by, profile_tab) VALUES (?, ?, ?, ?, ?)', 
+            'INSERT INTO custom_fields (tenant_id, name, type, managed_by, profile_tab) VALUES (?, ?, ?, ?, ?)',
             [tenant_id, name, 'DROPDOWN', managed_by, profile_tab]
         );
         res.status(201).json({ success: true, data: { id: result.insertId, name, managed_by, profile_tab, options: [] } });
@@ -34,17 +34,17 @@ const getCustomFields = async (req, res) => {
         // Adding it here ensures the frontend gets the data it needs.
         // =======================================================
         const [fields] = await pool.query(
-            'SELECT id, name, type, managed_by, profile_tab FROM custom_fields WHERE tenant_id = ?', 
+            'SELECT id, name, type, managed_by, profile_tab FROM custom_fields WHERE tenant_id = ?',
             [tenant_id]
         );
-        
+
         if (fields.length === 0) {
             return res.status(200).json({ success: true, data: [] });
         }
-        
+
         const fieldIds = fields.map(f => f.id);
         const [options] = await pool.query('SELECT * FROM custom_field_options WHERE field_id IN (?)', [fieldIds]);
-        
+
         const structuredFields = fields.map(field => ({
             ...field,
             options: options.filter(opt => opt.field_id === field.id)
@@ -58,9 +58,16 @@ const getCustomFields = async (req, res) => {
 };
 const updateCustomField = async (req, res) => {
     try {
-        await pool.query('UPDATE custom_fields SET name = ? WHERE id = ? AND tenant_id = ?', [req.body.name, req.params.fieldId, req.user.tenant_id]);
+        const { name, type, managed_by, profile_tab } = req.body;
+        await pool.query(
+            'UPDATE custom_fields SET name = ?, type = ?, managed_by = ?, profile_tab = ? WHERE id = ? AND tenant_id = ?',
+            [name, type, managed_by, profile_tab, req.params.fieldId, req.user.tenant_id]
+        );
         res.status(200).json({ success: true, message: 'Field updated.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Server error updating field.' }); }
+    } catch (error) {
+        console.error('Error updating custom field:', error);
+        res.status(500).json({ success: false, message: 'Server error updating field.' });
+    }
 };
 
 const deleteCustomField = async (req, res) => {
@@ -87,7 +94,7 @@ const createFieldOption = async (req, res) => {
         // --- THIS IS THE FIX ---
         // Changed `value` to `option_value` to match the database column name.
         const [result] = await pool.query('INSERT INTO custom_field_options (field_id, option_value) VALUES (?, ?)', [field_id, value]);
-        
+
         res.status(201).json({ success: true, message: 'Option created successfully.', data: { id: result.insertId, option_value: value } });
     } catch (error) {
         console.error("Create Field Option Error:", error);
@@ -113,9 +120,9 @@ const deleteFieldOption = async (req, res) => {
         const [result] = await pool.query(`DELETE cfo FROM custom_field_options cfo JOIN custom_fields cf ON cfo.field_id = cf.id WHERE cfo.id = ? AND cf.tenant_id = ?`, [optionId, tenant_id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Option not found or you do not have permission to delete it.' });
         res.status(200).json({ success: true, message: 'Option deleted.' });
-    } catch (error) { 
+    } catch (error) {
         console.error("Delete Field Option Error:", error);
-        res.status(500).json({ success: false, message: 'Server error deleting option.' }); 
+        res.status(500).json({ success: false, message: 'Server error deleting option.' });
     }
 };
 
