@@ -144,7 +144,7 @@ const updateMyProfile = async (req, res) => {
     } catch (error) {
         if (connection) await connection.rollback();
         console.error("[updateMyProfile] FATAL ERROR:", error);
-        res.status(500).json({ success: false, message: "Server error while updating profile." });
+        res.status(500).json({ success: false, message: "Server error: " + error.message });
     } finally {
         if (connection) connection.release();
     }
