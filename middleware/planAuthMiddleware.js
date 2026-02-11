@@ -10,7 +10,8 @@ const pool = require('../config/db');
 const canAccessPlans = async (req, res, next) => {
     try {
         // A superior_admin can always access everything.
-        if (req.user && req.user.role === 'superior_admin') {
+        // FIX: Use includes() because role might be "system_admin, superior_admin"
+        if (req.user && req.user.role && req.user.role.includes('superior_admin')) {
             return next();
         }
 

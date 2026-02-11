@@ -7,7 +7,7 @@ const pool = require('../config/db');
  * This version is now fully permission-aware based on department membership.
  * - Superior Admins see all departments in the tenant.
  * - Other users (admins/managers) see ONLY the departments they are assigned to.**/
- // Replace the existing getPlanData function in src/controllers/planController.js with this one.
+// Replace the existing getPlanData function in src/controllers/planController.js with this one.
 
 const getPlanData = async (req, res) => {
     const tenantId = req.user.tenant_id;
@@ -15,14 +15,15 @@ const getPlanData = async (req, res) => {
     const userRole = req.user.role;
     const { year } = req.query;
     const academicYear = year || new Date().getFullYear();
-    
+
     try {
         let departmentsQuery;
         let queryParams = [tenantId];
 
-        if (userRole === 'superior_admin') {
+        // FIX: Use includes() for multi-role support
+        if (userRole && userRole.includes('superior_admin')) {
             departmentsQuery = 'SELECT id, name, description, color FROM departments WHERE tenant_id = ?';
-        } else { 
+        } else {
             departmentsQuery = `
                 SELECT d.id, d.name, d.description, d.color 
                 FROM departments d JOIN department_members dm ON d.id = dm.department_id
@@ -30,10 +31,10 @@ const getPlanData = async (req, res) => {
             `;
             queryParams.push(userId);
         }
-        
+
         // Using the stable, sequential execution that is proven to work.
         const [departments] = await pool.query(departmentsQuery, queryParams);
-        
+
         const usersQuery = "SELECT u.id, u.role, p.full_name, p.profile_image_url FROM users u JOIN profiles p ON u.id = p.user_id WHERE u.tenant_id = ?";
         const [users] = await pool.query(usersQuery, [tenantId]);
 
@@ -44,10 +45,10 @@ const getPlanData = async (req, res) => {
         const departmentIds = departments.map(d => d.id);
 
         const [[members], [plans]] = await Promise.all([
-             pool.query('SELECT dm.department_id, dm.user_id, dm.role, p.full_name, p.profile_image_url as avatarUrl FROM department_members dm JOIN users u ON dm.user_id = u.id JOIN profiles p ON u.id = p.user_id WHERE dm.department_id IN (?)', [departmentIds]),
-             pool.query('SELECT * FROM plans WHERE department_id IN (?) AND academic_year = ?', [departmentIds, academicYear]),
+            pool.query('SELECT dm.department_id, dm.user_id, dm.role, p.full_name, p.profile_image_url as avatarUrl FROM department_members dm JOIN users u ON dm.user_id = u.id JOIN profiles p ON u.id = p.user_id WHERE dm.department_id IN (?)', [departmentIds]),
+            pool.query('SELECT * FROM plans WHERE department_id IN (?) AND academic_year = ?', [departmentIds, academicYear]),
         ]);
-       
+
         const departmentMembersMap = new Map();
         for (const member of members) {
             if (!departmentMembersMap.has(member.department_id)) {
@@ -57,10 +58,10 @@ const getPlanData = async (req, res) => {
                 userId: member.user_id, role: member.role, name: member.full_name, avatarUrl: member.avatarUrl
             });
         }
-        
+
         const processedDepartments = departments.map(dept => {
             return {
-                ...dept, 
+                ...dept,
                 members: departmentMembersMap.get(dept.id) || []
             };
         });
@@ -113,9 +114,9 @@ const updateDepartment = async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).json({ success: false, message: 'Department not found or access denied.' });
         }
-        
+
         const [[updatedDept]] = await pool.query('SELECT * FROM departments WHERE id = ?', [deptId]);
-        
+
         const [membersResult] = await pool.query('SELECT dm.user_id as userId, dm.role, p.full_name as name, p.profile_image_url as avatarUrl FROM department_members dm JOIN profiles p ON dm.user_id = p.user_id WHERE dm.department_id = ?', [deptId]);
 
         res.status(200).json({ success: true, data: { ...updatedDept, members: membersResult } });
@@ -127,7 +128,7 @@ const updateDepartment = async (req, res) => {
 
 const updateDepartmentMembers = async (req, res) => {
     const { deptId } = req.params;
-    const { members } = req.body; 
+    const { members } = req.body;
     const tenantId = req.user.tenant_id;
 
     if (!Array.isArray(members)) {
@@ -142,14 +143,14 @@ const updateDepartmentMembers = async (req, res) => {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'Department not found or access denied.' });
         }
-        
+
         await connection.query('DELETE FROM department_members WHERE department_id = ?', [deptId]);
-        
+
         if (members.length > 0) {
             const values = members.map(member => [deptId, member.userId, member.role]);
             await connection.query('INSERT INTO department_members (department_id, user_id, role) VALUES ?', [values]);
         }
-        
+
         await connection.commit();
         res.status(200).json({ success: true, message: 'Department members updated successfully.' });
     } catch (error) {
@@ -234,7 +235,7 @@ const togglePlanStatus = async (req, res) => {
             [isDone, planId, req.user.tenant_id]
         );
         res.status(200).json({ success: true, message: 'Status updated.' });
-    } catch(error) {
+    } catch (error) {
         console.error("Error toggling plan status:", error);
         res.status(500).json({ success: false, message: "Server error." });
     }
@@ -265,16 +266,16 @@ const performAnnualRollover = async (req, res) => {
                         `INSERT INTO plans (tenant_id, department_id, assignee_id, title, description, 
                             plan_date, is_done, is_high_priority, is_recurring, academic_year)
                          VALUES (?, ?, ?, ?, ?, NULL, FALSE, ?, TRUE, ?)`,
-                        [ tenantId, plan.department_id, plan.assignee_id, plan.title, plan.description, plan.is_high_priority, destinationYear ]
+                        [tenantId, plan.department_id, plan.assignee_id, plan.title, plan.description, plan.is_high_priority, destinationYear]
                     );
                     copiedCount++;
                 }
             }
         }
         await connection.commit();
-        res.status(200).json({ 
-            success: true, 
-            message: `Rollover complete. ${copiedCount} new recurring plans were created for ${destinationYear}.` 
+        res.status(200).json({
+            success: true,
+            message: `Rollover complete. ${copiedCount} new recurring plans were created for ${destinationYear}.`
         });
     } catch (error) {
         await connection.rollback();
@@ -297,9 +298,9 @@ const undoAnnualRollover = async (req, res) => {
             [yearToDelete, tenantId]
         );
         const deletedCount = deleteResult.affectedRows;
-        res.status(200).json({ 
-            success: true, 
-            message: `Undo complete. ${deletedCount} plans from ${yearToDelete} were deleted.` 
+        res.status(200).json({
+            success: true,
+            message: `Undo complete. ${deletedCount} plans from ${yearToDelete} were deleted.`
         });
     } catch (error) {
         console.error("Error during undo rollover:", error);
