@@ -5,39 +5,33 @@ const pool = require('../config/db');
 
 const createCustomField = async (req, res) => {
     try {
-        // Accept type, name, managed_by, and profile_tab from frontend
-        const { name, type, managed_by, profile_tab } = req.body;
+        const { name, type, field_type, managed_by, profile_tab } = req.body;
         const tenant_id = req.user.tenant_id;
         if (!name || !managed_by || !profile_tab) {
             return res.status(400).json({ success: false, message: 'Field name, management level, and profile tab are required.' });
         }
 
-        // Default to DROPDOWN if type is not provided
-        const fieldType = type || 'DROPDOWN';
+        const finalType = type || field_type || 'DROPDOWN';
 
         const [result] = await pool.query(
-            'INSERT INTO custom_fields (tenant_id, name, type, managed_by, profile_tab) VALUES (?, ?, ?, ?, ?)',
-            [tenant_id, name, fieldType, managed_by, profile_tab]
+            'INSERT INTO custom_fields (tenant_id, name, `type`, managed_by, profile_tab) VALUES (?, ?, ?, ?, ?)',
+            [tenant_id, name, finalType, managed_by, profile_tab]
         );
-        res.status(201).json({ success: true, data: { id: result.insertId, name, type: fieldType, managed_by, profile_tab, options: [] } });
+        res.status(201).json({
+            success: true,
+            data: { id: result.insertId, name, type: finalType, field_type: finalType, managed_by, profile_tab, options: [] }
+        });
     } catch (error) {
         console.error("Create Custom Field Error:", error);
         res.status(500).json({ success: false, message: 'Server error creating field.' });
     }
 };
 
-// controllers/templateController.js
-
 const getCustomFields = async (req, res) => {
     try {
         const tenant_id = req.user.tenant_id;
-
-        // ======================= THE FIX =======================
-        // The `profile_tab` column was missing from this SQL query.
-        // Adding it here ensures the frontend gets the data it needs.
-        // =======================================================
         const [fields] = await pool.query(
-            'SELECT * FROM custom_fields WHERE tenant_id = ?',
+            'SELECT id, name, `type`, `type` as field_type, managed_by, profile_tab FROM custom_fields WHERE tenant_id = ?',
             [tenant_id]
         );
 
@@ -59,26 +53,28 @@ const getCustomFields = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server error fetching fields.' });
     }
 };
+
 const updateCustomField = async (req, res) => {
     try {
-        const { name, type, managed_by, profile_tab } = req.body;
-        console.log('[updateCustomField] Received:', { name, type, managed_by, profile_tab, fieldId: req.params.fieldId });
-        await pool.query(
-            'UPDATE custom_fields SET name = ?, type = ?, managed_by = ?, profile_tab = ? WHERE id = ? AND tenant_id = ?',
-            [name, type, managed_by, profile_tab, req.params.fieldId, req.user.tenant_id]
-        );
-        console.log('[updateCustomField] Updated successfully');
+        const { name, type, field_type, managed_by, profile_tab } = req.body;
+        const finalType = type || field_type || 'TEXT';
 
-        // Fetch the updated field to verify what was saved
+        console.log('[updateCustomField] Received:', { name, type, field_type, finalType, managed_by, profile_tab, fieldId: req.params.fieldId });
+
+        await pool.query(
+            'UPDATE custom_fields SET name = ?, `type` = ?, managed_by = ?, profile_tab = ? WHERE id = ? AND tenant_id = ?',
+            [name, finalType, managed_by, profile_tab, req.params.fieldId, req.user.tenant_id]
+        );
+
         const [updated] = await pool.query(
-            'SELECT id, name, type, managed_by, profile_tab FROM custom_fields WHERE id = ? AND tenant_id = ?',
+            'SELECT id, name, `type`, `type` as field_type, managed_by, profile_tab FROM custom_fields WHERE id = ? AND tenant_id = ?',
             [req.params.fieldId, req.user.tenant_id]
         );
 
         res.status(200).json({
             success: true,
             message: 'Field updated.',
-            data: updated[0] // Return the updated field for debugging
+            data: updated[0]
         });
     } catch (error) {
         console.error('Error updating custom field:', error);
