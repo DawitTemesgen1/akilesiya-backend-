@@ -1,4 +1,4 @@
-const pool = require('../config/db');
+const pool = require('../../config/db');
 
 const runMigration = async () => {
     console.log('🔄 Starting Database Migration for Phone Authentication...');
@@ -46,6 +46,15 @@ const runMigration = async () => {
         } catch (e) {
             if (e.code === 'ER_DUP_FIELDNAME') console.log('ℹ️ otp_expires_at column already exists');
             else console.error('❌ Error adding otp_expires_at:', e.message);
+        }
+
+        // 6. Add value_text column to custom_field_values
+        try {
+            await connection.query('ALTER TABLE custom_field_values ADD COLUMN value_text TEXT NULL');
+            console.log('✅ Added value_text column to custom_field_values');
+        } catch (e) {
+            if (e.code === 'ER_DUP_FIELDNAME') console.log('ℹ️ value_text column already exists');
+            else console.error('❌ Error adding value_text:', e.message);
         }
 
         console.log('🏁 Migration Completed.');

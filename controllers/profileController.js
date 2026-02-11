@@ -56,7 +56,7 @@ const getMyProfile = async (req, res) => {
             const [customFieldsRows] = await pool.query(`
                 SELECT 
                     cf.name as field_name, 
-                    cfo.option_value as field_value,
+                    COALESCE(cfo.option_value, cfv.value_text) as field_value,
                     cf.profile_tab
                 FROM custom_fields cf
                 LEFT JOIN custom_field_values cfv ON cf.id = cfv.field_id AND cfv.user_id = ?
@@ -67,8 +67,12 @@ const getMyProfile = async (req, res) => {
             profile.custom_fields_detail = customFieldsRows;
 
             // 2. Raw IDs (for Profile Screen logic)
-            const [customValues] = await pool.query('SELECT field_id, option_id FROM custom_field_values WHERE user_id = ?', [userId]);
-            profile.custom_field_values = customValues;
+            const [customValues] = await pool.query('SELECT field_id, option_id, value_text FROM custom_field_values WHERE user_id = ?', [userId]);
+            // Merge option_id and value_text for the frontend
+            profile.custom_field_values = customValues.map(cv => ({
+                field_id: cv.field_id,
+                value: cv.option_id || cv.value_text
+            }));
 
             console.log(`[getMyProfile] Fetched ${customFieldsRows.length} details and ${customValues.length} raw values.`);
         } catch (err) {
@@ -105,13 +109,33 @@ const updateMyProfile = async (req, res) => {
 
         if (newProfileData.custom_field_values && typeof newProfileData.custom_field_values === 'object') {
             await connection.query('DELETE FROM custom_field_values WHERE user_id = ?', [userId]);
+
+            // Get all possible options to determine if a value is an option_id or text
+            const [allOptions] = await connection.query('SELECT id FROM custom_field_options');
+            const validOptionIds = new Set(allOptions.map(o => o.id.toString()));
+
             for (const field_id in newProfileData.custom_field_values) {
-                const option_id = newProfileData.custom_field_values[field_id];
-                if (option_id && option_id !== 'null' && option_id !== null) {
-                    // --- THIS IS THE CRITICAL FIX ---
-                    // Inserts into 'option_id' to match the final schema
-                    await connection.query(`INSERT INTO custom_field_values (user_id, field_id, option_id) VALUES (?, ?, ?)`, [userId, field_id, option_id]);
+                const rawValue = newProfileData.custom_field_values[field_id];
+
+                // Skip null/undefined
+                if (rawValue === null || rawValue === undefined || rawValue === 'null') continue;
+
+                const stringValue = rawValue.toString();
+
+                // Determine destination column
+                let option_id = null;
+                let value_text = null;
+
+                if (validOptionIds.has(stringValue)) {
+                    option_id = stringValue;
+                } else {
+                    value_text = stringValue;
                 }
+
+                await connection.query(
+                    `INSERT INTO custom_field_values (user_id, field_id, option_id, value_text) VALUES (?, ?, ?, ?)`,
+                    [userId, field_id, option_id, value_text]
+                );
             }
         }
 

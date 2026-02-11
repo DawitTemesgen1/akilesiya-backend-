@@ -1,5 +1,5 @@
 const mysql = require('mysql2/promise');
-require('dotenv').config();
+try { require('dotenv').config(); } catch (e) { console.log('Items: dotenv not found, assuming env vars are set.'); }
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,

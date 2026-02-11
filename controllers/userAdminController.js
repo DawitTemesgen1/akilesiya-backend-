@@ -27,7 +27,7 @@ const updateUserRoles = async (req, res) => {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
-        
+
         const currentRoleString = users[0].role || 'user';
         let roles = currentRoleString.split(',').map(r => r.trim()).filter(r => r);
         const hasRole = roles.includes(roleToToggle);
@@ -42,12 +42,12 @@ const updateUserRoles = async (req, res) => {
 
         if (newRoleString !== currentRoleString) {
             await connection.query('UPDATE users SET role = ? WHERE id = ?', [newRoleString, userId]);
-            
+
             // ======================== THE FIX IS HERE ========================
             // We now log descriptive names instead of true/false.
             const previousValue = hasRole ? roleToToggle : 'user';
             const newValue = shouldBeAdmin ? roleToToggle : 'user';
-            
+
             await logAudit(connection, {
                 tenant_id: req.user.tenant_id,
                 admin_user_id: req.user.id,
@@ -59,7 +59,7 @@ const updateUserRoles = async (req, res) => {
             });
             // ===============================================================
         }
-        
+
         await connection.commit();
         res.status(200).json({ success: true, message: 'User roles updated successfully.' });
 
@@ -82,18 +82,23 @@ const getUserDetailsForAdmin = async (req, res) => {
             FROM users u 
             JOIN profiles p ON u.id = p.user_id 
             WHERE u.id = ?`, [userId]);
-            
+
         if (!details) {
             return res.status(404).json({ success: false, message: "User not found." });
         }
-        
-        const [customValues] = await pool.query('SELECT field_id, option_id FROM custom_field_values WHERE user_id = ?', [userId]);
-        details.custom_field_values = customValues;
+
+        const [customValues] = await pool.query('SELECT field_id, option_id, value_text FROM custom_field_values WHERE user_id = ?', [userId]);
+        // Normalize for frontend
+        details.custom_field_values = customValues.map(cv => ({
+            field_id: cv.field_id,
+            option_id: cv.option_id, // keep for backward compat
+            value: cv.option_id || cv.value_text
+        }));
 
         res.status(200).json({ success: true, data: details });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error in getUserDetailsForAdmin:", error);
-        res.status(500).json({ success: false, message: 'Server error fetching user details.' }); 
+        res.status(500).json({ success: false, message: 'Server error fetching user details.' });
     }
 };
 
@@ -105,9 +110,9 @@ const verifyUser = async (req, res) => {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
         res.status(200).json({ success: true, message: 'User verified successfully.' });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error in verifyUser:", error);
-        res.status(500).json({ success: false, message: 'Server error verifying user.' }); 
+        res.status(500).json({ success: false, message: 'Server error verifying user.' });
     }
 };
 
@@ -138,14 +143,28 @@ const updateUserByAdmin = async (req, res) => {
         if (Object.keys(profileUpdates).length > 0) {
             await connection.query('UPDATE profiles SET ? WHERE user_id = ?', [profileUpdates, userId]);
         }
-        
+
         if (updates.custom_field_values && typeof updates.custom_field_values === 'object') {
             await connection.query('DELETE FROM custom_field_values WHERE user_id = ?', [userId]);
+
+            const [allOptions] = await connection.query('SELECT id FROM custom_field_options');
+            const validOptionIds = new Set(allOptions.map(o => o.id.toString()));
+
             for (const field_id in updates.custom_field_values) {
-                const option_id = updates.custom_field_values[field_id];
-                if (option_id && option_id !== 'null' && option_id !== null) {
-                    await connection.query(`INSERT INTO custom_field_values (user_id, field_id, option_id) VALUES (?, ?, ?)`, [userId, field_id, option_id]);
+                const rawValue = updates.custom_field_values[field_id];
+                if (rawValue === null || rawValue === undefined || rawValue === 'null') continue;
+
+                const stringValue = rawValue.toString();
+                let option_id = null;
+                let value_text = null;
+
+                if (validOptionIds.has(stringValue)) {
+                    option_id = stringValue;
+                } else {
+                    value_text = stringValue;
                 }
+
+                await connection.query(`INSERT INTO custom_field_values (user_id, field_id, option_id, value_text) VALUES (?, ?, ?, ?)`, [userId, field_id, option_id, value_text]);
             }
         }
 
@@ -251,7 +270,7 @@ const updateProfileSettings = async (req, res) => {
     try {
         const tenant_id = req.user.tenant_id;
         const settings = req.body;
-        
+
         await connection.beginTransaction();
         for (const widget_key in settings) {
             const is_visible = settings[widget_key];
@@ -285,9 +304,9 @@ const getUsersWithUnreviewedChanges = async (req, res) => {
             GROUP BY u.id, p.full_name 
             ORDER BY MAX(cl.created_at) DESC`);
         res.status(200).json({ success: true, data: users });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error in getUsersWithUnreviewedChanges:", error);
-        res.status(500).json({ success: false, message: 'Server error fetching log summary.' }); 
+        res.status(500).json({ success: false, message: 'Server error fetching log summary.' });
     }
 };
 
@@ -296,9 +315,9 @@ const getChangeLogForUser = async (req, res) => {
         const { userId } = req.params;
         const [logs] = await pool.query('SELECT * FROM change_logs WHERE user_id = ? ORDER BY created_at DESC', [userId]);
         res.status(200).json({ success: true, data: logs });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error in getChangeLogForUser:", error);
-        res.status(500).json({ success: false, message: 'Server error fetching user log.' }); 
+        res.status(500).json({ success: false, message: 'Server error fetching user log.' });
     }
 };
 
@@ -307,9 +326,9 @@ const markLogsAsReviewed = async (req, res) => {
         const { userId } = req.params;
         await pool.query('UPDATE change_logs SET is_reviewed = TRUE WHERE user_id = ?', [userId]);
         res.status(200).json({ success: true, message: 'Logs marked as reviewed.' });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error in markLogsAsReviewed:", error);
-        res.status(500).json({ success: false, message: 'Server error updating logs.' }); 
+        res.status(500).json({ success: false, message: 'Server error updating logs.' });
     }
 };
 // ADD THIS ENTIRE FUNCTION
@@ -338,26 +357,26 @@ const getAllUsers = async (req, res) => {
 // ===================================
 // MODULE EXPORTS - THIS IS THE FIX
 // ===================================
-module.exports = { 
+module.exports = {
     // User Management
-    getAllUsers, 
-    getUserDetailsForAdmin, 
-    verifyUser, 
+    getAllUsers,
+    getUserDetailsForAdmin,
+    verifyUser,
     updateUserByAdmin,
-    updateUserRoles, 
-    
+    updateUserRoles,
+
     // Service Group Management (These were missing before)
-    createServiceSector, 
-    getServiceSectors, 
-    deleteServiceSector, 
-    createServiceUnit, 
-    getServiceUnitsForSector, 
+    createServiceSector,
+    getServiceSectors,
+    deleteServiceSector,
+    createServiceUnit,
+    getServiceUnitsForSector,
     deleteServiceUnit,
 
     // Profile Visibility
     getProfileSettings,
     updateProfileSettings,
-    
+
     // Change Logs
     getUsersWithUnreviewedChanges,
     getChangeLogForUser,
