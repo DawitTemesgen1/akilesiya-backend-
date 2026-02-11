@@ -68,19 +68,7 @@ const getCustomFields = async (req, res) => {
 const updateCustomField = async (req, res) => {
     try {
         const { name, field_type, type, managed_by, profile_tab } = req.body;
-
-        // Strict validation to catch empty strings from frontend
-        if (!(field_type && field_type.trim()) && !(type && type.trim())) {
-            return res.status(400).json({
-                success: false,
-                message: 'Field type is missing or empty in the request.',
-                received_body: req.body
-            });
-        }
-
-        const finalType = (field_type || type).toString().trim().toUpperCase();
-
-        console.log(`[DEBUG] Updating field ${req.params.fieldId} with type: "${finalType}"`);
+        const finalType = (field_type || type || 'TEXT').toUpperCase();
 
         await pool.query(
             'UPDATE custom_fields SET name = ?, `type` = ?, managed_by = ?, profile_tab = ? WHERE id = ? AND tenant_id = ?',
