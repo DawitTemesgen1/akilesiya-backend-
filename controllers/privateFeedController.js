@@ -249,9 +249,10 @@ const deletePostComment = async (req, res) => {
             return res.status(404).json({ success: false, message: "Comment not found." });
         }
 
+        const roles = Array.isArray(userRole) ? userRole : (userRole || "").split(",");
         const isOwner = comment.user_id === userId;
-        const isSystemAdmin = userRole === 'system_admin';
-        const isSchoolAdmin = userRole === 'superior_admin' && userTenantId === comment.authorTenantId;
+        const isSystemAdmin = roles.includes('system_admin');
+        const isSchoolAdmin = roles.includes('superior_admin') && userTenantId === comment.authorTenantId;
 
         if (isOwner || isSystemAdmin || isSchoolAdmin) {
             await pool.query("DELETE FROM private_post_comments WHERE id = ?", [commentId]);

@@ -220,16 +220,21 @@ const deletePublicPostComment = async (req, res) => {
         `, [commentId]);
 
         if (!comment) {
+            console.log(`[DEBUG] Comment ${commentId} not found.`);
             return res.status(404).json({ success: false, message: "Comment not found." });
         }
+
+        console.log(`[DEBUG] Delete Request: userId=${userId}, userRole=${userRole}, userTenantId=${userTenantId}`);
+        console.log(`[DEBUG] Comment Author: authorId=${comment.user_id}, authorTenantId=${comment.authorTenantId}`);
 
         // Authorization logic:
         // 1. Owner can delete
         // 2. System Admin can delete anything
         // 3. Superior Admin can delete if in the same school (tenant)
         const isOwner = comment.user_id === userId;
-        const isSystemAdmin = userRole === 'system_admin';
-        const isSchoolAdmin = userRole === 'superior_admin' && userTenantId === comment.authorTenantId;
+        const roles = Array.isArray(userRole) ? userRole : (userRole || "").split(",");
+        const isSystemAdmin = roles.includes('system_admin');
+        const isSchoolAdmin = roles.includes('superior_admin') && userTenantId === comment.authorTenantId;
 
         if (isOwner || isSystemAdmin || isSchoolAdmin) {
             await pool.query("DELETE FROM public_post_comments WHERE id = ?", [commentId]);
