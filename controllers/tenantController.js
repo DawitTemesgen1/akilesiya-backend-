@@ -56,7 +56,7 @@ const getTenantCustomFields = async (req, res) => {
 
         // Fetch fields
         const [fields] = await pool.query(
-            'SELECT id, name, type, filled_by, profile_tab FROM custom_fields WHERE tenant_id = ? ORDER BY id',
+            'SELECT id, name, type, managed_by, profile_tab FROM custom_fields WHERE tenant_id = ? ORDER BY id',
             [tenantId]
         );
 
@@ -74,7 +74,7 @@ const getTenantCustomFields = async (req, res) => {
             options: options.filter(opt => opt.field_id === field.id)
         }));
 
-        console.log('[getTenantCustomFields] Returning fields:', structuredFields.map(f => ({ name: f.name, filled_by: f.filled_by })));
+        console.log('[getTenantCustomFields] Returning fields:', structuredFields.map(f => ({ name: f.name, managed_by: f.managed_by })));
         res.status(200).json({ success: true, data: structuredFields });
     } catch (error) {
         console.error("Get Tenant Custom Fields Error:", error);
