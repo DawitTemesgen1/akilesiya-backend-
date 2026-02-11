@@ -5,21 +5,32 @@ const pool = require('../config/db');
 
 const createCustomField = async (req, res) => {
     try {
-        const { name, type, field_type, managed_by, profile_tab } = req.body;
+        const { name, field_type, type, managed_by, profile_tab } = req.body;
         const tenant_id = req.user.tenant_id;
+
+        // Use field_type as primary, fallback to type, default to DROPDOWN
+        const finalType = (field_type || type || 'DROPDOWN').toUpperCase();
+
         if (!name || !managed_by || !profile_tab) {
             return res.status(400).json({ success: false, message: 'Field name, management level, and profile tab are required.' });
         }
-
-        const finalType = type || field_type || 'DROPDOWN';
 
         const [result] = await pool.query(
             'INSERT INTO custom_fields (tenant_id, name, `type`, managed_by, profile_tab) VALUES (?, ?, ?, ?, ?)',
             [tenant_id, name, finalType, managed_by, profile_tab]
         );
+
         res.status(201).json({
             success: true,
-            data: { id: result.insertId, name, type: finalType, field_type: finalType, managed_by, profile_tab, options: [] }
+            data: {
+                id: result.insertId,
+                name,
+                type: finalType,
+                field_type: finalType,
+                managed_by,
+                profile_tab,
+                options: []
+            }
         });
     } catch (error) {
         console.error("Create Custom Field Error:", error);
@@ -56,9 +67,8 @@ const getCustomFields = async (req, res) => {
 
 const updateCustomField = async (req, res) => {
     try {
-        const { name, type, field_type, managed_by, profile_tab } = req.body;
-        const finalType = type || field_type || 'TEXT';
-
+        const { name, field_type, type, managed_by, profile_tab } = req.body;
+        const finalType = (field_type || type || 'TEXT').toUpperCase();
 
         await pool.query(
             'UPDATE custom_fields SET name = ?, `type` = ?, managed_by = ?, profile_tab = ? WHERE id = ? AND tenant_id = ?',
