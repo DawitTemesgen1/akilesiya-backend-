@@ -78,7 +78,7 @@ const updateUserRoles = async (req, res) => {
         return res.status(400).json({ success: false, message: "User ID, a valid role, and an action ('add' or 'remove') are required." });
     }
     if (userId === req.user.id) {
-        return res.status(400).json({ success: false, message: "Cannot change your own roles."});
+        return res.status(400).json({ success: false, message: "Cannot change your own roles." });
     }
 
     const connection = await pool.getConnection();
@@ -98,14 +98,14 @@ const updateUserRoles = async (req, res) => {
         } else { // 'remove'
             currentRoles.delete(role);
         }
-        
+
         if (currentRoles.size > 1) {
             currentRoles.delete('user');
         }
         if (currentRoles.size === 0) {
             currentRoles.add('user');
         }
-        
+
         const newRoles = Array.from(currentRoles).join(',');
 
         await connection.query("UPDATE users SET role = ? WHERE id = ?", [newRoles, userId]);
@@ -170,15 +170,15 @@ const updateUserLibraryRoles = async (req, res) => {
 
         if (isLibraryAdmin) currentRoles.add('library_admin');
         else currentRoles.delete('library_admin');
-        
+
 
         if (currentRoles.size > 1) currentRoles.delete('user');
         if (currentRoles.size === 0) currentRoles.add('user');
-        
+
         const newRolesString = Array.from(currentRoles).join(',');
-        
+
         const [updateResult] = await connection.query('UPDATE users SET role = ? WHERE id = ?', [newRolesString, userId]);
-        
+
         await connection.commit();
         res.status(200).json({ success: true, message: 'User library roles updated successfully.' });
 
@@ -204,7 +204,7 @@ const getAllUsersWithLearningRoles = async (req, res) => {
             id: user.id,
             fullName: user.full_name,
             profileImageUrl: user.profile_image_url,
-            isLearningAdmin: user.role.includes('learning_admin') 
+            isLearningAdmin: user.role.includes('learning_admin')
         }));
         res.status(200).json({ success: true, data: formattedUsers });
     } catch (error) {
@@ -237,7 +237,7 @@ const updateUserLearningRoles = async (req, res) => {
 
         if (currentRoles.size > 1) currentRoles.delete('user');
         if (currentRoles.size === 0) currentRoles.add('user');
-        
+
         const newRolesString = Array.from(currentRoles).join(',');
         await connection.query('UPDATE users SET role = ? WHERE id = ?', [newRolesString, userId]);
         await connection.commit();
@@ -284,7 +284,7 @@ const getDetailedUsers = async (req, res) => {
         const { search, role, spiritualClass } = req.query;
 
         let query = `
-            SELECT u.id, p.full_name, u.email, u.role, p.profile_image_url, p.spiritual_class
+            SELECT u.id, p.full_name, u.email, u.role, u.is_verified, p.profile_image_url, p.spiritual_class
             FROM users u
             JOIN profiles p ON u.id = p.user_id
             WHERE u.tenant_id = ? AND u.is_active = 1
@@ -323,7 +323,7 @@ const getFullUserDetail = async (req, res) => {
         // =======================================================
         const [rows] = await pool.query(`
             SELECT 
-                u.id, u.email, u.role,
+                u.id, u.email, u.role, u.is_verified, u.is_active,
                 p.full_name, p.profile_image_url, p.christian_name, p.confession_father_name,
                 p.mother_name, p.gender, p.dob, p.academic_level, p.phone_number,
                 p.parent_name, p.parent_phone_number, p.spiritual_class, p.kifil,
@@ -351,7 +351,7 @@ const getFullUserDetail = async (req, res) => {
         }
 
         let userDetail = rows[0];
-        
+
         // Custom fields parsing logic (unchanged)
         if (userDetail.custom_fields_json_string) {
             try {
