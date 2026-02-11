@@ -56,7 +56,7 @@ const getTenantCustomFields = async (req, res) => {
 
         // Fetch fields
         const [fields] = await pool.query(
-            'SELECT id, name, type, managed_by, profile_tab FROM custom_fields WHERE tenant_id = ? ORDER BY id',
+            'SELECT id, name, type, filled_by, profile_tab FROM custom_fields WHERE tenant_id = ? ORDER BY id',
             [tenantId]
         );
 
