@@ -118,24 +118,31 @@ const updateMyProfile = async (req, res) => {
                 const rawValue = newProfileData.custom_field_values[field_id];
 
                 // Skip null/undefined
-                if (rawValue === null || rawValue === undefined || rawValue === 'null') continue;
+                if (rawValue === null || rawValue === undefined || rawValue === 'null' || rawValue === '') continue;
 
-                const stringValue = rawValue.toString();
+                // Handle both single values and arrays (for MULTISELECT/CHECKBOX)
+                const valuesToProcess = Array.isArray(rawValue) ? rawValue : [rawValue];
 
-                // Determine destination column
-                let option_id = null;
-                let value_text = null;
+                for (const val of valuesToProcess) {
+                    if (val === null || val === undefined || val === 'null' || val === '') continue;
 
-                if (validOptionIds.has(stringValue)) {
-                    option_id = stringValue;
-                } else {
-                    value_text = stringValue;
+                    const stringValue = val.toString();
+
+                    // Determine destination column
+                    let option_id = null;
+                    let value_text = null;
+
+                    if (validOptionIds.has(stringValue)) {
+                        option_id = stringValue;
+                    } else {
+                        value_text = stringValue;
+                    }
+
+                    await connection.query(
+                        `INSERT INTO custom_field_values (user_id, field_id, option_id, value_text) VALUES (?, ?, ?, ?)`,
+                        [userId, field_id, option_id, value_text]
+                    );
                 }
-
-                await connection.query(
-                    `INSERT INTO custom_field_values (user_id, field_id, option_id, value_text) VALUES (?, ?, ?, ?)`,
-                    [userId, field_id, option_id, value_text]
-                );
             }
         }
 
