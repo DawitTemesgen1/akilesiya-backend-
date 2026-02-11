@@ -126,9 +126,10 @@ const getCommentsForContent = async (req, res) => {
         const { id } = req.params;
         const [comments] = await pool.query(`
             SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
-                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
+                   p.full_name as author, p.profile_image_url as authorAvatar, u.tenant_id as authorTenantId
             FROM learning_content_comments c
             JOIN profiles p ON c.user_id = p.user_id
+            JOIN users u ON c.user_id = u.id
             WHERE c.content_id = ?
             ORDER BY c.created_at ASC
         `, [id]);
@@ -155,9 +156,10 @@ const addComment = async (req, res) => {
 
         const [[newComment]] = await pool.query(`
             SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
-                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
+                   p.full_name as author, p.profile_image_url as authorAvatar, u.tenant_id as authorTenantId
             FROM learning_content_comments c
             JOIN profiles p ON c.user_id = p.user_id
+            JOIN users u ON c.user_id = u.id
             WHERE c.id = ?
         `, [result.insertId]);
 
@@ -188,9 +190,9 @@ const deleteComment = async (req, res) => {
         const userTenantId = req.user.tenant_id;
 
         const [[comment]] = await pool.query(`
-            SELECT c.user_id, p.tenant_id as authorTenantId 
+            SELECT c.user_id, u.tenant_id as authorTenantId 
             FROM learning_content_comments c 
-            JOIN profiles p ON c.user_id = p.user_id 
+            JOIN users u ON c.user_id = u.id 
             WHERE c.id = ?
         `, [commentId]);
 

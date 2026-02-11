@@ -46,8 +46,12 @@ const getComments = async (req, res) => {
     try {
         const { bookId } = req.params;
         const [comments] = await pool.query(`
-            SELECT c.id, c.user_id as userId, c.parent_id as parentId, p.full_name as userName, p.profile_image_url as profileImageUrl, c.comment_text as text, c.created_at as timestamp, p.tenant_id as authorTenantId
-            FROM book_comments c JOIN profiles p ON c.user_id = p.user_id WHERE c.book_id = ? ORDER BY c.created_at DESC
+            SELECT c.id, c.user_id as userId, c.parent_id as parentId, p.full_name as author, p.profile_image_url as authorAvatar, c.comment_text as text, c.created_at as timestamp, u.tenant_id as authorTenantId
+            FROM book_comments c 
+            JOIN profiles p ON c.user_id = p.user_id 
+            JOIN users u ON c.user_id = u.id
+            WHERE c.book_id = ? 
+            ORDER BY c.created_at DESC
         `, [bookId]);
         res.status(200).json({ success: true, data: comments });
     } catch (error) {
@@ -85,9 +89,10 @@ const addComment = async (req, res) => {
                 p.profile_image_url as profileImageUrl, 
                 c.comment_text as text, 
                 c.created_at as timestamp,
-                p.tenant_id as authorTenantId
+                u.tenant_id as authorTenantId
             FROM book_comments c
             JOIN profiles p ON c.user_id = p.user_id
+            JOIN users u ON c.user_id = u.id
             WHERE c.id = ?
         `, [result.insertId]);
 
@@ -125,9 +130,9 @@ const deleteComment = async (req, res) => {
         const userTenantId = req.user.tenant_id;
 
         const [[comment]] = await pool.query(`
-            SELECT c.user_id, p.tenant_id as authorTenantId 
+            SELECT c.user_id, u.tenant_id as authorTenantId 
             FROM book_comments c 
-            JOIN profiles p ON c.user_id = p.user_id 
+            JOIN users u ON c.user_id = u.id 
             WHERE c.id = ?
         `, [commentId]);
 

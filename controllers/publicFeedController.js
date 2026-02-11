@@ -131,9 +131,10 @@ const getPublicPostComments = async (req, res) => {
         const { postId } = req.params;
         const [comments] = await pool.query(`
             SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
-                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
+                   p.full_name as author, p.profile_image_url as authorAvatar, u.tenant_id as authorTenantId
             FROM public_post_comments c
             JOIN profiles p ON c.user_id = p.user_id
+            JOIN users u ON c.user_id = u.id
             WHERE c.post_id = ?
             ORDER BY c.created_at ASC
         `, [postId]);
@@ -163,9 +164,10 @@ const createPublicPostComment = async (req, res) => {
 
         const [[newComment]] = await pool.query(`
             SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
-                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
+                   p.full_name as author, p.profile_image_url as authorAvatar, u.tenant_id as authorTenantId
             FROM public_post_comments c
             JOIN profiles p ON c.user_id = p.user_id
+            JOIN users u ON c.user_id = u.id
             WHERE c.id = ?
         `, [result.insertId]);
 
@@ -209,11 +211,11 @@ const deletePublicPostComment = async (req, res) => {
         const userRole = req.user.role;
         const userTenantId = req.user.tenant_id;
 
-        // Fetch comment and author's tenant_id
+        // Fetch comment and author's tenant_id (from users table)
         const [[comment]] = await pool.query(`
-            SELECT c.user_id, p.tenant_id as authorTenantId 
+            SELECT c.user_id, u.tenant_id as authorTenantId 
             FROM public_post_comments c 
-            JOIN profiles p ON c.user_id = p.user_id 
+            JOIN users u ON c.user_id = u.id 
             WHERE c.id = ?
         `, [commentId]);
 
