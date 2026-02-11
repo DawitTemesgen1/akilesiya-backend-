@@ -5,18 +5,21 @@ const pool = require('../config/db');
 
 const createCustomField = async (req, res) => {
     try {
-        // --- NEW: Receive 'profile_tab' from the frontend ---
-        const { name, managed_by, profile_tab } = req.body;
+        // Accept type, name, managed_by, and profile_tab from frontend
+        const { name, type, managed_by, profile_tab } = req.body;
         const tenant_id = req.user.tenant_id;
         if (!name || !managed_by || !profile_tab) {
             return res.status(400).json({ success: false, message: 'Field name, management level, and profile tab are required.' });
         }
 
+        // Default to DROPDOWN if type is not provided
+        const fieldType = type || 'DROPDOWN';
+
         const [result] = await pool.query(
             'INSERT INTO custom_fields (tenant_id, name, type, managed_by, profile_tab) VALUES (?, ?, ?, ?, ?)',
-            [tenant_id, name, 'DROPDOWN', managed_by, profile_tab]
+            [tenant_id, name, fieldType, managed_by, profile_tab]
         );
-        res.status(201).json({ success: true, data: { id: result.insertId, name, managed_by, profile_tab, options: [] } });
+        res.status(201).json({ success: true, data: { id: result.insertId, name, type: fieldType, managed_by, profile_tab, options: [] } });
     } catch (error) {
         console.error("Create Custom Field Error:", error);
         res.status(500).json({ success: false, message: 'Server error creating field.' });
