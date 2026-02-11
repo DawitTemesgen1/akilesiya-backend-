@@ -59,7 +59,6 @@ const updateCustomField = async (req, res) => {
         const { name, type, field_type, managed_by, profile_tab } = req.body;
         const finalType = type || field_type || 'TEXT';
 
-        console.log('[updateCustomField] Received:', { name, type, field_type, finalType, managed_by, profile_tab, fieldId: req.params.fieldId });
 
         await pool.query(
             'UPDATE custom_fields SET name = ?, `type` = ?, managed_by = ?, profile_tab = ? WHERE id = ? AND tenant_id = ?',
