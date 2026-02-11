@@ -74,6 +74,7 @@ const getTenantCustomFields = async (req, res) => {
             options: options.filter(opt => opt.field_id === field.id)
         }));
 
+        console.log('[getTenantCustomFields] Returning fields:', structuredFields.map(f => ({ name: f.name, filled_by: f.filled_by })));
         res.status(200).json({ success: true, data: structuredFields });
     } catch (error) {
         console.error("Get Tenant Custom Fields Error:", error);
