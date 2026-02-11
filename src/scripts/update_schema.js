@@ -57,6 +57,14 @@ const runMigration = async () => {
             else console.error('❌ Error adding value_text:', e.message);
         }
 
+        // 7. Make option_id nullable in custom_field_values
+        try {
+            await connection.query('ALTER TABLE custom_field_values MODIFY COLUMN option_id INT NULL');
+            console.log('✅ Made option_id nullable in custom_field_values');
+        } catch (e) {
+            console.error('❌ Error modifying option_id:', e.message);
+        }
+
         console.log('🏁 Migration Completed.');
     } catch (error) {
         console.error('💥 Migration Fatal Error:', error);
