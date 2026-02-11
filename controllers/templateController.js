@@ -37,7 +37,7 @@ const getCustomFields = async (req, res) => {
         // Adding it here ensures the frontend gets the data it needs.
         // =======================================================
         const [fields] = await pool.query(
-            'SELECT id, name, type, managed_by, profile_tab FROM custom_fields WHERE tenant_id = ?',
+            'SELECT * FROM custom_fields WHERE tenant_id = ?',
             [tenant_id]
         );
 
