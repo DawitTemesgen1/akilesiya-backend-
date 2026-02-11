@@ -8,29 +8,25 @@ const {
     deleteLearningContent,
     getCommentsForContent,
     addComment,
+    updateComment,
+    deleteComment,
     toggleLike,
     toggleBookmark
 } = require('../controllers/learningController');
 
-// All routes are protected and require a user to be logged in
 router.use(protect);
 
-// --- Content Routes ---
-router.route('/')
-    .get(getLearningContent) // GET /api/learning/
-    .post(superiorAdmin, createLearningContent); // POST /api/learning/ (Admin Only)
+router.get('/', getLearningContent);
+router.post('/:id/like', toggleLike);
+router.post('/:id/bookmark', toggleBookmark);
+router.get('/:id/comments', getCommentsForContent);
+router.post('/:id/comments', addComment);
+router.put('/comments/:commentId', updateComment);
+router.delete('/comments/:commentId', deleteComment);
 
-router.route('/:id')
-    .put(superiorAdmin, updateLearningContent) // PUT /api/learning/:id (Admin Only)
-    .delete(superiorAdmin, deleteLearningContent); // DELETE /api/learning/:id (Admin Only)
-
-// --- Interaction Routes ---
-router.post('/:id/like', toggleLike); // POST /api/learning/:id/like
-router.post('/:id/bookmark', toggleBookmark); // POST /api/learning/:id/bookmark
-
-// --- Comment Routes ---
-router.route('/:id/comments')
-    .get(getCommentsForContent) // GET /api/learning/:id/comments
-    .post(addComment); // POST /api/learning/:id/comments
+// Admin-only routes
+router.post('/admin', superiorAdmin, createLearningContent);
+router.put('/admin/:id', superiorAdmin, updateLearningContent);
+router.delete('/admin/:id', superiorAdmin, deleteLearningContent);
 
 module.exports = router;

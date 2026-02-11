@@ -52,8 +52,7 @@ const createPublicPost = async (req, res) => {
         }
 
         const [result] = await pool.query(
-            `INSERT INTO public_posts (user_id, title, description, image_url, type, location, event_date, is_important) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            "INSERT INTO public_posts (user_id, title, description, image_url, type, location, event_date, is_important) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [userId, title, description, finalImageUrl, type, location || null, eventDate || null, isImportant === 'true' ? 1 : 0]
         );
 
@@ -131,12 +130,12 @@ const getPublicPostComments = async (req, res) => {
     try {
         const { postId } = req.params;
         const [comments] = await pool.query(`
-            SELECT c.id, c.comment_text as text, c.created_at as timestamp,
-                   p.full_name as author, p.profile_image_url as authorAvatar
+            SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
+                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
             FROM public_post_comments c
             JOIN profiles p ON c.user_id = p.user_id
             WHERE c.post_id = ?
-            ORDER BY c.created_at DESC
+            ORDER BY c.created_at ASC
         `, [postId]);
         res.status(200).json({ success: true, data: comments });
     } catch (error) {
@@ -151,26 +150,91 @@ const createPublicPostComment = async (req, res) => {
     try {
         const { postId } = req.params;
         const userId = req.user.id;
-        const { text } = req.body;
+        const { text, parentId } = req.body;
 
         if (!text || text.trim() === '') {
             return res.status(400).json({ success: false, message: 'Comment text cannot be empty.' });
         }
 
         const [result] = await pool.query(
-            "INSERT INTO public_post_comments (post_id, user_id, comment_text) VALUES (?, ?, ?)",
-            [postId, userId, text]
+            "INSERT INTO public_post_comments (post_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?)",
+            [postId, userId, text, parentId || null]
         );
 
         const [[newComment]] = await pool.query(`
-            SELECT c.id, c.comment_text as text, c.created_at as timestamp,
-                   p.full_name as author, p.profile_image_url as authorAvatar
+            SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
+                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
             FROM public_post_comments c
             JOIN profiles p ON c.user_id = p.user_id
             WHERE c.id = ?
         `, [result.insertId]);
 
         res.status(201).json({ success: true, message: 'Comment posted.', data: newComment });
+    } catch (error) {
+        console.error("[createPublicPostComment] FATAL ERROR:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+    }
+};
+
+// @desc    Update a comment on a public post
+// @route   PUT /api/public-feed/comments/:commentId
+// @access  Private
+const updatePublicPostComment = async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const { text } = req.body;
+        const userId = req.user.id;
+
+        const [result] = await pool.query(
+            "UPDATE public_post_comments SET comment_text = ? WHERE id = ? AND user_id = ?",
+            [text, commentId, userId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(403).json({ success: false, message: "Not authorized or comment not found." });
+        }
+        res.status(200).json({ success: true, message: "Comment updated." });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server error." });
+    }
+};
+
+// @desc    Delete a comment on a public post
+// @route   DELETE /api/public-feed/comments/:commentId
+// @access  Private
+const deletePublicPostComment = async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const userId = req.user.id;
+        const userRole = req.user.role;
+        const userTenantId = req.user.tenant_id;
+
+        // Fetch comment and author's tenant_id
+        const [[comment]] = await pool.query(`
+            SELECT c.user_id, p.tenant_id as authorTenantId 
+            FROM public_post_comments c 
+            JOIN profiles p ON c.user_id = p.user_id 
+            WHERE c.id = ?
+        `, [commentId]);
+
+        if (!comment) {
+            return res.status(404).json({ success: false, message: "Comment not found." });
+        }
+
+        // Authorization logic:
+        // 1. Owner can delete
+        // 2. System Admin can delete anything
+        // 3. Superior Admin can delete if in the same school (tenant)
+        const isOwner = comment.user_id === userId;
+        const isSystemAdmin = userRole === 'system_admin';
+        const isSchoolAdmin = userRole === 'superior_admin' && userTenantId === comment.authorTenantId;
+
+        if (isOwner || isSystemAdmin || isSchoolAdmin) {
+            await pool.query("DELETE FROM public_post_comments WHERE id = ?", [commentId]);
+            return res.status(200).json({ success: true, message: "Comment deleted." });
+        }
+
+        res.status(403).json({ success: false, message: "Not authorized to delete this comment." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error." });
     }
@@ -181,6 +245,8 @@ module.exports = {
     togglePublicPostLike,
     getPublicPostComments,
     createPublicPostComment,
+    updatePublicPostComment,
+    deletePublicPostComment,
     createPublicPost,
     updatePublicPost,
     deletePublicPost,

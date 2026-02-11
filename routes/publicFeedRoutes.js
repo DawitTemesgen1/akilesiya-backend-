@@ -6,6 +6,8 @@ const {
     togglePublicPostLike,
     getPublicPostComments,
     createPublicPostComment,
+    updatePublicPostComment,
+    deletePublicPostComment,
     createPublicPost,
     updatePublicPost,
     deletePublicPost
@@ -20,6 +22,8 @@ router.get('/posts', getPublicPosts);
 router.post('/posts/:postId/like', togglePublicPostLike);
 router.get('/posts/:postId/comments', getPublicPostComments);
 router.post('/posts/:postId/comments', createPublicPostComment);
+router.put('/comments/:commentId', updatePublicPostComment);
+router.delete('/comments/:commentId', deletePublicPostComment);
 
 // --- Admin-Only Routes ---
 // Use superiorAdmin middleware to protect these endpoints

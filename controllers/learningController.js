@@ -1,13 +1,6 @@
 const pool = require('../config/db');
 
 // @desc    Get all visible learning content
-// @route   GET /api/learning
-// @access  Private
-// ... (keep createLearningContent, updateLearningContent, etc. the same)
-
-// @desc    Get all visible learning content
-// @route   GET /api/learning
-// @access  Private
 const getLearningContent = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -18,7 +11,7 @@ const getLearningContent = async (req, res) => {
                 lc.id,
                 lc.title,
                 p.full_name as author,
-                p.profile_image_url as authorAvatar, -- THIS LINE IS ADDED
+                p.profile_image_url as authorAvatar,
                 lc.created_at as publishDate,
                 lc.description,
                 lc.type,
@@ -45,11 +38,6 @@ const getLearningContent = async (req, res) => {
     }
 };
 
-
-
-// @desc    Create new learning content
-// @route   POST /api/learning
-// @access  Private (Superior Admin)
 const createLearningContent = async (req, res) => {
     try {
         const { title, description, imageUrl, type, content, duration, category, difficulty, visibility } = req.body;
@@ -69,9 +57,6 @@ const createLearningContent = async (req, res) => {
     }
 };
 
-// @desc    Update learning content
-// @route   PUT /api/learning/:id
-// @access  Private (Superior Admin)
 const updateLearningContent = async (req, res) => {
     try {
         const { id } = req.params;
@@ -91,9 +76,6 @@ const updateLearningContent = async (req, res) => {
     }
 };
 
-// @desc    Delete learning content
-// @route   DELETE /api/learning/:id
-// @access  Private (Superior Admin)
 const deleteLearningContent = async (req, res) => {
     try {
         const { id } = req.params;
@@ -105,16 +87,11 @@ const deleteLearningContent = async (req, res) => {
     }
 };
 
-// @desc    Toggle a like on content
-// @route   POST /api/learning/:id/like
-// @access  Private
 const toggleLike = async (req, res) => {
     try {
         const { id: content_id } = req.params;
         const user_id = req.user.id;
-
         const [[exists]] = await pool.query("SELECT * FROM learning_content_likes WHERE content_id = ? AND user_id = ?", [content_id, user_id]);
-
         if (exists) {
             await pool.query("DELETE FROM learning_content_likes WHERE content_id = ? AND user_id = ?", [content_id, user_id]);
             res.status(200).json({ success: true, liked: false });
@@ -127,16 +104,11 @@ const toggleLike = async (req, res) => {
     }
 };
 
-// @desc    Toggle a bookmark on content
-// @route   POST /api/learning/:id/bookmark
-// @access  Private
 const toggleBookmark = async (req, res) => {
     try {
         const { id: content_id } = req.params;
         const user_id = req.user.id;
-
         const [[exists]] = await pool.query("SELECT * FROM learning_content_bookmarks WHERE content_id = ? AND user_id = ?", [content_id, user_id]);
-        
         if (exists) {
             await pool.query("DELETE FROM learning_content_bookmarks WHERE content_id = ? AND user_id = ?", [content_id, user_id]);
             res.status(200).json({ success: true, bookmarked: false });
@@ -149,24 +121,16 @@ const toggleBookmark = async (req, res) => {
     }
 };
 
-
-// @desc    Get comments for a piece of content
-// @route   GET /api/learning/:id/comments
-// @access  Private
 const getCommentsForContent = async (req, res) => {
     try {
         const { id } = req.params;
         const [comments] = await pool.query(`
-            SELECT 
-                c.id, 
-                p.full_name as author, 
-                SUBSTRING(p.full_name, 1, 1) as avatarInitials, 
-                c.comment_text as text, 
-                c.created_at as timestamp
+            SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
+                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
             FROM learning_content_comments c
             JOIN profiles p ON c.user_id = p.user_id
             WHERE c.content_id = ?
-            ORDER BY c.created_at DESC
+            ORDER BY c.created_at ASC
         `, [id]);
         res.status(200).json({ success: true, data: comments });
     } catch (error) {
@@ -174,44 +138,80 @@ const getCommentsForContent = async (req, res) => {
     }
 };
 
-// @desc    Add a comment to a piece of content
-// @route   POST /api/learning/:id/comments
-// @access  Private
 const addComment = async (req, res) => {
     try {
         const { id: content_id } = req.params;
         const user_id = req.user.id;
-        const { text } = req.body;
+        const { text, parentId } = req.body;
 
         if (!text) {
             return res.status(400).json({ success: false, message: "Comment text is required" });
         }
 
         const [result] = await pool.query(
-            "INSERT INTO learning_content_comments (content_id, user_id, comment_text) VALUES (?, ?, ?)",
-            [content_id, user_id, text]
+            "INSERT INTO learning_content_comments (content_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?)",
+            [content_id, user_id, text, parentId || null]
         );
-        
-        // Return the newly created comment
+
         const [[newComment]] = await pool.query(`
-            SELECT 
-                c.id, 
-                p.full_name as author, 
-                SUBSTRING(p.full_name, 1, 1) as avatarInitials, 
-                c.comment_text as text, 
-                c.created_at as timestamp
+            SELECT c.id, c.user_id as userId, c.parent_id as parentId, c.comment_text as text, c.created_at as timestamp,
+                   p.full_name as author, p.profile_image_url as authorAvatar, p.tenant_id as authorTenantId
             FROM learning_content_comments c
             JOIN profiles p ON c.user_id = p.user_id
             WHERE c.id = ?
         `, [result.insertId]);
 
         res.status(201).json({ success: true, data: newComment });
-
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
+const updateComment = async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const { text } = req.body;
+        const userId = req.user.id;
+        const [result] = await pool.query("UPDATE learning_content_comments SET comment_text = ? WHERE id = ? AND user_id = ?", [text, commentId, userId]);
+        if (result.affectedRows === 0) return res.status(403).json({ success: false, message: "Not authorized or comment not found." });
+        res.status(200).json({ success: true, message: "Comment updated." });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server error." });
+    }
+};
+
+const deleteComment = async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const userId = req.user.id;
+        const userRole = req.user.role;
+        const userTenantId = req.user.tenant_id;
+
+        const [[comment]] = await pool.query(`
+            SELECT c.user_id, p.tenant_id as authorTenantId 
+            FROM learning_content_comments c 
+            JOIN profiles p ON c.user_id = p.user_id 
+            WHERE c.id = ?
+        `, [commentId]);
+
+        if (!comment) {
+            return res.status(404).json({ success: false, message: "Comment not found." });
+        }
+
+        const isOwner = comment.user_id === userId;
+        const isSystemAdmin = userRole === 'system_admin';
+        const isSchoolAdmin = userRole === 'superior_admin' && userTenantId === comment.authorTenantId;
+
+        if (isOwner || isSystemAdmin || isSchoolAdmin) {
+            await pool.query("DELETE FROM learning_content_comments WHERE id = ?", [commentId]);
+            return res.status(200).json({ success: true, message: "Comment deleted." });
+        }
+
+        res.status(403).json({ success: false, message: "Not authorized to delete this comment." });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Server error." });
+    }
+};
 
 module.exports = {
     getLearningContent,
@@ -220,6 +220,8 @@ module.exports = {
     deleteLearningContent,
     getCommentsForContent,
     addComment,
+    updateComment,
+    deleteComment,
     toggleLike,
     toggleBookmark
 };

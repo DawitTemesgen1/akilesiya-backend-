@@ -23,7 +23,7 @@ const getAssignedBooks = async (req, res) => {
                 COUNT(*) as like_count, 
                 SUM(IF(user_id = ?, 1, 0)) as is_liked_by_user 
              FROM book_likes WHERE assigned_book_id IN (?) GROUP BY assigned_book_id`,
-             [userId, assignmentIds]
+            [userId, assignmentIds]
         );
 
         const likesMap = new Map(likesData.map(l => [l.assigned_book_id, { likes: l.like_count, isLiked: l.is_liked_by_user > 0 }]));
@@ -34,7 +34,7 @@ const getAssignedBooks = async (req, res) => {
             likes: likesMap.get(book.assignmentId)?.likes ?? 0,
             isLiked: likesMap.get(book.assignmentId)?.isLiked ?? false,
         }));
-        
+
         res.status(200).json({ success: true, data: processedBooks });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error." });
@@ -46,7 +46,7 @@ const getComments = async (req, res) => {
     try {
         const { bookId } = req.params;
         const [comments] = await pool.query(`
-            SELECT c.id, p.full_name as userName, p.profile_image_url as profileImageUrl, c.comment_text as text, c.created_at as timestamp
+            SELECT c.id, c.user_id as userId, c.parent_id as parentId, p.full_name as userName, p.profile_image_url as profileImageUrl, c.comment_text as text, c.created_at as timestamp, p.tenant_id as authorTenantId
             FROM book_comments c JOIN profiles p ON c.user_id = p.user_id WHERE c.book_id = ? ORDER BY c.created_at DESC
         `, [bookId]);
         res.status(200).json({ success: true, data: comments });
@@ -62,7 +62,7 @@ const getComments = async (req, res) => {
 const addComment = async (req, res) => {
     try {
         const { bookId } = req.params;
-        const { text } = req.body;
+        const { text, parentId } = req.body;
         const userId = req.user.id;
 
         if (!text || text.trim() === '') {
@@ -71,25 +71,25 @@ const addComment = async (req, res) => {
 
         // Step 1: Insert the new comment
         const [result] = await pool.query(
-            "INSERT INTO book_comments (book_id, user_id, comment_text) VALUES (?, ?, ?)",
-            [bookId, userId, text.trim()]
+            "INSERT INTO book_comments (book_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?)",
+            [bookId, userId, text.trim(), parentId || null]
         );
 
-        // ======================= THE FIX =======================
         // Step 2: Fetch the complete comment *with user details* to send back to the app.
-        // This JOIN was missing, causing the blank comment issue.
         const [[newComment]] = await pool.query(`
             SELECT 
                 c.id, 
+                c.user_id as userId,
+                c.parent_id as parentId,
                 p.full_name as userName, 
                 p.profile_image_url as profileImageUrl, 
                 c.comment_text as text, 
-                c.created_at as timestamp
+                c.created_at as timestamp,
+                p.tenant_id as authorTenantId
             FROM book_comments c
             JOIN profiles p ON c.user_id = p.user_id
             WHERE c.id = ?
         `, [result.insertId]);
-        // =======================================================
 
         res.status(201).json({ success: true, data: newComment });
     } catch (error) {
@@ -102,7 +102,13 @@ const updateComment = async (req, res) => {
     try {
         const { commentId } = req.params;
         const { text } = req.body;
-        const [result] = await pool.query("UPDATE book_comments SET comment_text = ? WHERE id = ? AND user_id = ?", [text, commentId, req.user.id]);
+        const userId = req.user.id;
+
+        const [result] = await pool.query(
+            "UPDATE book_comments SET comment_text = ? WHERE id = ? AND user_id = ?",
+            [text, commentId, userId]
+        );
+
         if (result.affectedRows === 0) return res.status(403).json({ success: false, message: "Not authorized or comment not found." });
         res.status(200).json({ success: true, message: "Comment updated." });
     } catch (error) {
@@ -114,9 +120,31 @@ const updateComment = async (req, res) => {
 const deleteComment = async (req, res) => {
     try {
         const { commentId } = req.params;
-        const [result] = await pool.query("DELETE FROM book_comments WHERE id = ? AND (user_id = ? OR ? = 'superior_admin')", [commentId, req.user.id, req.user.role]);
-        if (result.affectedRows === 0) return res.status(403).json({ success: false, message: "Not authorized or comment not found." });
-        res.status(200).json({ success: true, message: "Comment deleted." });
+        const userId = req.user.id;
+        const userRole = req.user.role;
+        const userTenantId = req.user.tenant_id;
+
+        const [[comment]] = await pool.query(`
+            SELECT c.user_id, p.tenant_id as authorTenantId 
+            FROM book_comments c 
+            JOIN profiles p ON c.user_id = p.user_id 
+            WHERE c.id = ?
+        `, [commentId]);
+
+        if (!comment) {
+            return res.status(404).json({ success: false, message: "Comment not found." });
+        }
+
+        const isOwner = comment.user_id === userId;
+        const isSystemAdmin = userRole === 'system_admin';
+        const isSchoolAdmin = userRole === 'superior_admin' && userTenantId === comment.authorTenantId;
+
+        if (isOwner || isSystemAdmin || isSchoolAdmin) {
+            await pool.query("DELETE FROM book_comments WHERE id = ?", [commentId]);
+            return res.status(200).json({ success: true, message: "Comment deleted." });
+        }
+
+        res.status(403).json({ success: false, message: "Not authorized to delete this comment." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error." });
     }
@@ -166,17 +194,17 @@ const updateReadStatus = async (req, res) => {
 const createMasterBook = async (req, res) => {
     try {
         const { title, author, cover_url, description, rating, genres, is_featured, pull_quote, full_review, perfect_for } = req.body;
-        
+
         const [result] = await pool.query(
             "INSERT INTO books (tenant_id, title, author, cover_url, description, rating, genres, is_featured, pull_quote, full_review, perfect_for) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                req.user.tenant_id, title, author, cover_url, description, 
-                rating || 0.0, 
+                req.user.tenant_id, title, author, cover_url, description,
+                rating || 0.0,
                 // Ensure data is stringified for JSON columns
-                JSON.stringify(genres || []), 
-                is_featured || 0, 
-                pull_quote || '', 
-                full_review || '', 
+                JSON.stringify(genres || []),
+                is_featured || 0,
+                pull_quote || '',
+                full_review || '',
                 JSON.stringify(perfect_for || [])
             ]
         );

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, superiorAdmin } = require('../middleware/authMiddleware');
+const { protect, superiorAdmin } = require('../middleware/authMiddleware'); // <-- Import superiorAdmin
 const {
     getTenantDetails,
     getPrivatePosts,
@@ -10,26 +10,29 @@ const {
     updateTenantDetails,
     togglePostLike,
     getPostComments,
-    createPostComment
+    createPostComment,
+    updatePostComment,
+    deletePostComment
 } = require('../controllers/privateFeedController');
+const { upload } = require('../middleware/uploadMiddleware'); // Import upload middleware
 
-const { upload } = require('../middleware/uploadMiddleware');
+// All routes require a user to be logged in
+router.use(protect);
 
-router.use(protect); // All routes below are now protected
-
-// --- Tenant Routes ---
+// --- Sunday School Routes ---
 router.get('/tenant/:tenantId', getTenantDetails);
-router.put('/tenant/:tenantId', superiorAdmin, updateTenantDetails); // <-- NEW
-
-// --- Post Feed Routes ---
 router.get('/posts/:tenantId', getPrivatePosts);
-router.post('/posts', superiorAdmin, upload.single('image'), createPrivatePost);
-router.put('/posts/:postId', superiorAdmin, updatePrivatePost);
-router.delete('/posts/:postId', superiorAdmin, deletePrivatePost);
+router.post('/posts/:postId/like', togglePostLike);
+router.get('/posts/:postId/comments', getPostComments);
+router.post('/posts/:postId/comments', createPostComment);
+router.put('/comments/:commentId', updatePostComment);
+router.delete('/comments/:commentId', deletePostComment);
 
-// --- Post Interaction Routes ---
-router.post('/posts/:postId/like', togglePostLike); // <-- NEW
-router.get('/posts/:postId/comments', getPostComments); // <-- NEW
-router.post('/posts/:postId/comments', createPostComment); // <-- NEW
+// --- Admin-Only Routes ---
+router.put('/tenant/:tenantId', superiorAdmin, updateTenantDetails);
+router.post('/admin/posts', superiorAdmin, upload.single('image'), createPrivatePost);
+router.put('/admin/posts/:postId', superiorAdmin, updatePrivatePost);
+router.delete('/admin/posts/:postId', superiorAdmin, deletePrivatePost);
+
 
 module.exports = router;
