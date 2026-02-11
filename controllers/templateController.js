@@ -62,10 +62,12 @@ const getCustomFields = async (req, res) => {
 const updateCustomField = async (req, res) => {
     try {
         const { name, type, managed_by, profile_tab } = req.body;
+        console.log('[updateCustomField] Received:', { name, type, managed_by, profile_tab, fieldId: req.params.fieldId });
         await pool.query(
             'UPDATE custom_fields SET name = ?, type = ?, managed_by = ?, profile_tab = ? WHERE id = ? AND tenant_id = ?',
             [name, type, managed_by, profile_tab, req.params.fieldId, req.user.tenant_id]
         );
+        console.log('[updateCustomField] Updated successfully');
         res.status(200).json({ success: true, message: 'Field updated.' });
     } catch (error) {
         console.error('Error updating custom field:', error);
