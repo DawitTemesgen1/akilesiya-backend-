@@ -20,9 +20,9 @@ const getLinkedStudents = async (req, res) => {
                  WHERE a.user_id = u.id 
                  ORDER BY a.attendance_date DESC LIMIT 1) as lastTopic
             FROM family_links fl
-            JOIN users u ON fl.student_id = u.id
+            JOIN users u ON fl.student_user_id = u.id
             JOIN profiles p ON u.id = p.user_id
-            WHERE fl.parent_id = ?`, [parentId]);
+            WHERE fl.parent_user_id = ?`, [parentId]);
         res.status(200).json({ success: true, data: students });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error." });
