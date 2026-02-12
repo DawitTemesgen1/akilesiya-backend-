@@ -10,12 +10,19 @@ const getLinkedStudents = async (req, res) => {
                 u.id, p.full_name, p.profile_image_url, p.spiritual_class,
                 p.service_status,
                 88.5 AS overallGrade, 95.0 AS attendancePercentage,
-                (SELECT COUNT(*) > 0 FROM service_assignments sa WHERE sa.user_id = u.id AND sa.is_active = 1) AS isSelectedForService
+                (SELECT COUNT(*) > 0 FROM service_assignments sa WHERE sa.user_id = u.id AND sa.is_active = 1) AS isSelectedForService,
+                (SELECT dt.topic 
+                 FROM attendance a 
+                 JOIN daily_topics dt ON a.attendance_date = dt.date 
+                    AND a.session = dt.session 
+                    AND a.attendance_type = dt.attendance_type 
+                    AND a.tenant_id = dt.tenant_id 
+                 WHERE a.user_id = u.id 
+                 ORDER BY a.attendance_date DESC LIMIT 1) as lastTopic
             FROM family_links fl
-            JOIN users u ON fl.student_user_id = u.id
+            JOIN users u ON fl.student_id = u.id
             JOIN profiles p ON u.id = p.user_id
-            WHERE fl.parent_user_id = ?
-        `, [parentId]);
+            WHERE fl.parent_id = ?`, [parentId]);
         res.status(200).json({ success: true, data: students });
     } catch (error) {
         res.status(500).json({ success: false, message: "Server error." });
@@ -45,7 +52,15 @@ const getStudentDetails = async (req, res) => {
             [gradeHistory]
         ] = await Promise.all([
             pool.query("SELECT id, title, COALESCE(deadline, CURDATE()) as deadline, is_read FROM recommended_books WHERE student_user_id = ? ORDER BY deadline", [studentId]),
-            pool.query("SELECT id, user_id, COALESCE(attendance_date, CURDATE()) as attendance_date, session, status, attendance_type, late_time FROM attendance WHERE user_id = ? ORDER BY attendance_date DESC", [studentId]),
+            pool.query(`
+                SELECT 
+                    a.id, a.user_id, COALESCE(a.attendance_date, CURDATE()) as attendance_date, 
+                    a.session, a.status, a.attendance_type, a.late_time, 
+                    dt.topic
+                FROM attendance a
+                LEFT JOIN daily_topics dt ON a.attendance_date = dt.date AND a.session = dt.session AND a.attendance_type = dt.attendance_type AND a.tenant_id = dt.tenant_id
+                WHERE a.user_id = ? 
+                ORDER BY a.attendance_date DESC`, [studentId]),
 
             // This query now joins the tables to get the course_name
             pool.query(`
