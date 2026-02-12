@@ -8,7 +8,7 @@ const getLinkedStudents = async (req, res) => {
         const [students] = await pool.query(`
             SELECT 
                 u.id, p.full_name, p.profile_image_url, p.spiritual_class,
-                p.service_status, p.service_sector,
+                p.service_status,
                 88.5 AS overallGrade, 95.0 AS attendancePercentage,
                 (SELECT COUNT(*) > 0 FROM service_assignments sa WHERE sa.user_id = u.id AND sa.is_active = 1) AS isSelectedForService
             FROM family_links fl
