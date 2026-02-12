@@ -9,7 +9,14 @@ const getLinkedStudents = async (req, res) => {
             SELECT 
                 u.id, p.full_name, p.profile_image_url, p.spiritual_class,
                 p.service_status,
-                88.5 AS overallGrade, 95.0 AS attendancePercentage
+                88.5 AS overallGrade, 95.0 AS attendancePercentage,
+                (SELECT COUNT(*) FROM service_assignments sa WHERE sa.user_id = u.id AND sa.is_active = 1 LIMIT 1) AS isSelectedForService,
+                (SELECT dt.topic 
+                 FROM attendance a 
+                 JOIN daily_topics dt ON a.attendance_date = dt.date 
+                    AND a.session = dt.session
+                 WHERE a.user_id = u.id 
+                 ORDER BY a.attendance_date DESC LIMIT 1) as lastTopic
             FROM family_links fl
             JOIN users u ON fl.student_user_id = u.id
             JOIN profiles p ON u.id = p.user_id
@@ -50,7 +57,7 @@ const getStudentDetails = async (req, res) => {
                     a.session, a.status, a.attendance_type, a.late_time, 
                     dt.topic
                 FROM attendance a
-                LEFT JOIN daily_topics dt ON a.attendance_date = dt.date AND a.session = dt.session AND a.attendance_type = dt.attendance_type AND a.tenant_id = dt.tenant_id
+                LEFT JOIN daily_topics dt ON a.attendance_date = dt.date AND a.session = dt.session
                 WHERE a.user_id = ? 
                 ORDER BY a.attendance_date DESC`, [studentId]),
 
