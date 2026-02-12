@@ -9,7 +9,14 @@ const getLinkedStudents = async (req, res) => {
             SELECT 
                 u.id, p.full_name, p.profile_image_url, p.spiritual_class,
                 p.service_status,
-                88.5 AS overallGrade, 95.0 AS attendancePercentage,
+                (SELECT COALESCE(AVG(score), 0.0) FROM student_scores WHERE user_id = u.id) AS overallGrade,
+                (SELECT 
+                    CASE 
+                        WHEN COUNT(*) = 0 THEN 100.0 
+                        ELSE (COUNT(CASE WHEN status != 'absent' THEN 1 END) * 100.0 / COUNT(*))
+                    END
+                 FROM attendance 
+                 WHERE user_id = u.id) AS attendancePercentage,
                 (SELECT COUNT(*) FROM service_assignments sa WHERE sa.user_id = u.id AND sa.is_active = 1 LIMIT 1) AS isSelectedForService,
                 (SELECT dt.topic 
                  FROM attendance a 
