@@ -9,22 +9,14 @@ const getLinkedStudents = async (req, res) => {
             SELECT 
                 u.id, p.full_name, p.profile_image_url, p.spiritual_class,
                 p.service_status,
-                88.5 AS overallGrade, 95.0 AS attendancePercentage,
-                (SELECT COUNT(*) > 0 FROM service_assignments sa WHERE sa.user_id = u.id AND sa.is_active = 1) AS isSelectedForService,
-                (SELECT dt.topic 
-                 FROM attendance a 
-                 JOIN daily_topics dt ON a.attendance_date = dt.date 
-                    AND a.session = dt.session 
-                    AND a.attendance_type = dt.attendance_type 
-                    AND a.tenant_id = dt.tenant_id 
-                 WHERE a.user_id = u.id 
-                 ORDER BY a.attendance_date DESC LIMIT 1) as lastTopic
+                88.5 AS overallGrade, 95.0 AS attendancePercentage
             FROM family_links fl
             JOIN users u ON fl.student_user_id = u.id
             JOIN profiles p ON u.id = p.user_id
             WHERE fl.parent_user_id = ?`, [parentId]);
         res.status(200).json({ success: true, data: students });
     } catch (error) {
+        console.error("Error in getLinkedStudents:", error);
         res.status(500).json({ success: false, message: "Server error." });
     }
 };
@@ -89,6 +81,7 @@ const getStudentDetails = async (req, res) => {
         res.status(200).json({ success: true, data: responseData });
 
     } catch (error) {
+        console.error("Error in getStudentDetails:", error);
         res.status(500).json({ success: false, message: "Server error while fetching student data." });
     }
 };
