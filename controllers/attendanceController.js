@@ -48,7 +48,7 @@ const getStudentsForAttendance = async (req, res) => {
             ORDER BY 
                 p.full_name ASC
         `, [req.user.tenant_id]);
-        
+
         const formattedStudents = students.map(s => {
             let customFields = {};
             try {
@@ -66,11 +66,12 @@ const getStudentsForAttendance = async (req, res) => {
 
 const getAttendanceRecords = async (req, res) => {
     try {
-        const { date, session, attendance_type } = req.query;
+        const { date, session, attendance_type, attendanceType } = req.query;
+        const type = attendance_type || attendanceType;
         const tenantId = req.user.tenant_id;
-        const [attendance] = await pool.query('SELECT user_id, status, late_time FROM attendance WHERE attendance_date = ? AND session = ? AND attendance_type = ? AND tenant_id = ?', [date, session, attendance_type, tenantId]);
-        const [[topicResult]] = await pool.query('SELECT topic FROM daily_topics WHERE date = ? AND session = ? AND attendance_type = ? AND tenant_id = ?', [date, session, attendance_type, tenantId]);
-        res.status(200).json({ success: true, data: { attendance: attendance || [], topic: topicResult ? topicResult.topic : null }});
+        const [attendance] = await pool.query('SELECT user_id, status, late_time FROM attendance WHERE attendance_date = ? AND session = ? AND attendance_type = ? AND tenant_id = ?', [date, session, type, tenantId]);
+        const [[topicResult]] = await pool.query('SELECT topic FROM daily_topics WHERE date = ? AND session = ? AND attendance_type = ? AND tenant_id = ?', [date, session, type, tenantId]);
+        res.status(200).json({ success: true, data: { attendance: attendance || [], topic: topicResult ? topicResult.topic : null } });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error fetching records.' });
     }
@@ -90,14 +91,15 @@ const saveAttendance = async (req, res) => {
         await connection.beginTransaction();
 
         if (dailyTopic && dailyTopic.topic) {
-            const { date, session, topic, attendance_type } = dailyTopic;
-            await connection.query('INSERT INTO daily_topics (tenant_id, date, session, attendance_type, topic) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE topic = VALUES(topic)', [tenantId, date, session, attendance_type, topic]);
+            const { date, session, topic, attendance_type, attendanceType } = dailyTopic;
+            const type = attendance_type || attendanceType;
+            await connection.query('INSERT INTO daily_topics (tenant_id, date, session, attendance_type, topic) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE topic = VALUES(topic)', [tenantId, date, session, type, topic]);
         }
-        
+
         // Get existing statuses to compare for changes
         const studentIds = records.map(r => r.student_id);
         const date = records.length > 0 ? records[0].date : null;
-        
+
         let existingStatuses = {};
         if (date && studentIds.length > 0) {
             const [currentRecords] = await connection.query(
@@ -108,14 +110,14 @@ const saveAttendance = async (req, res) => {
                 existingStatuses[rec.user_id] = rec.status;
             });
         }
-        
+
         for (const record of records) {
             const { student_id, date, session, status, attendance_type, late_time } = record;
             const previousStatus = existingStatuses[student_id] || 'Not Recorded';
 
             // Only log if the status has actually changed
             if (previousStatus !== status) {
-                 await logAudit(connection, {
+                await logAudit(connection, {
                     tenant_id: tenantId,
                     admin_user_id: adminUserId,
                     affected_user_id: student_id,
@@ -167,9 +169,9 @@ const getDetailedAttendanceSummary = async (req, res) => {
             userWhereClauses.push('cfv.field_id = ? AND cfv.option_id = ?');
             userParams.push(dynamicFilterFieldId, dynamicFilterOptionId);
         }
-        
+
         userQuery += ` WHERE ${userWhereClauses.join(' AND ')}`;
-        
+
         const [allFilteredUsers] = await pool.query(userQuery, userParams);
 
         if (allFilteredUsers.length === 0) {
@@ -182,7 +184,7 @@ const getDetailedAttendanceSummary = async (req, res) => {
         let attendanceQuery = `SELECT user_id, status, COUNT(id) as count, attendance_date FROM attendance`;
         const attendanceParams = [filteredUserIds];
         let attendanceWhereClauses = [`user_id IN (?)`];
-        
+
         if (startDate && endDate) {
             attendanceWhereClauses.push('attendance_date BETWEEN ? AND ?');
             attendanceParams.push(startDate, endDate);
@@ -197,7 +199,7 @@ const getDetailedAttendanceSummary = async (req, res) => {
         }
 
         attendanceQuery += ` WHERE ${attendanceWhereClauses.join(' AND ')} GROUP BY user_id, status, attendance_date`;
-        
+
         const [attendanceStats] = await pool.query(attendanceQuery, attendanceParams);
 
         // STEP 3: Process the data in JavaScript.
@@ -206,7 +208,7 @@ const getDetailedAttendanceSummary = async (req, res) => {
 
         for (const stat of attendanceStats) {
             uniqueDays.add(stat.attendance_date.toISOString().split('T')[0]);
-            
+
             const userStats = attendanceMap.get(stat.user_id) || { present: 0, absent: 0, late: 0, permission: 0 };
             userStats[stat.status] = (userStats[stat.status] || 0) + stat.count;
             attendanceMap.set(stat.user_id, userStats);
@@ -242,8 +244,8 @@ const getDetailedAttendanceSummary = async (req, res) => {
         }, { total_present: 0, total_absent: 0, total_late: 0, total_permission: 0 });
 
         const totalOverallRecords = Object.values(overallStats).reduce((sum, count) => sum + count, 0);
-        overallStats.overall_percentage = totalOverallRecords > 0 
-            ? ((overallStats.total_present + overallStats.total_late) / totalOverallRecords) * 100 
+        overallStats.overall_percentage = totalOverallRecords > 0
+            ? ((overallStats.total_present + overallStats.total_late) / totalOverallRecords) * 100
             : 0;
         overallStats.unique_days_count = uniqueDays.size;
 
@@ -259,7 +261,7 @@ const getDetailedAttendanceSummary = async (req, res) => {
 const getMyAttendanceHistory = async (req, res) => {
     try {
         const userId = req.user.id;
-        const [history] = await pool.query(`SELECT a.attendance_date, a.session, a.status, a.late_time, a.attendance_type, dt.topic FROM attendance a LEFT JOIN daily_topics dt ON a.attendance_date = dt.date AND a.session = dt.session AND a.attendance_type = dt.attendance_type AND a.tenant_id = dt.tenant_id WHERE a.user_id = ? ORDER BY a.attendance_date DESC;`, [userId]);
+        const [history] = await pool.query(`SELECT a.attendance_date, a.session, a.status, a.late_time, a.attendance_type, dt.topic FROM attendance a LEFT JOIN daily_topics dt ON a.attendance_date = dt.date AND a.session = dt.session WHERE a.user_id = ? ORDER BY a.attendance_date DESC;`, [userId]);
         res.status(200).json({ success: true, data: history });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error fetching user history.' });
@@ -269,7 +271,7 @@ const getMyAttendanceHistory = async (req, res) => {
 const getAttendanceHistoryForUser = async (req, res) => {
     try {
         const { userId } = req.params;
-        const [history] = await pool.query(`SELECT a.attendance_date, a.session, a.status, a.late_time, a.attendance_type, dt.topic FROM attendance a LEFT JOIN daily_topics dt ON a.attendance_date = dt.date AND a.session = dt.session AND a.attendance_type = dt.attendance_type AND a.tenant_id = dt.tenant_id WHERE a.user_id = ? ORDER BY a.attendance_date DESC;`, [userId]);
+        const [history] = await pool.query(`SELECT a.attendance_date, a.session, a.status, a.late_time, a.attendance_type, dt.topic FROM attendance a LEFT JOIN daily_topics dt ON a.attendance_date = dt.date AND a.session = dt.session WHERE a.user_id = ? ORDER BY a.attendance_date DESC;`, [userId]);
         res.status(200).json({ success: true, data: history });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error fetching user history.' });
