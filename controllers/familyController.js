@@ -8,6 +8,7 @@ const getLinkedStudents = async (req, res) => {
         const [students] = await pool.query(`
             SELECT 
                 u.id, p.full_name, p.profile_image_url, p.spiritual_class,
+                p.service_status, p.service_sector,
                 88.5 AS overallGrade, 95.0 AS attendancePercentage,
                 (SELECT COUNT(*) > 0 FROM service_assignments sa WHERE sa.user_id = u.id AND sa.is_active = 1) AS isSelectedForService
             FROM family_links fl
@@ -27,7 +28,7 @@ const getStudentDetails = async (req, res) => {
         const { studentId } = req.params;
 
         const [profileRows] = await pool.query(
-            "SELECT full_name, profile_image_url, spiritual_class FROM profiles WHERE user_id = ?", 
+            "SELECT * FROM profiles WHERE user_id = ?",
             [studentId]
         );
 
@@ -39,13 +40,13 @@ const getStudentDetails = async (req, res) => {
         // ======================= THE FIX =======================
         // The query for 'gradeHistory' now correctly JOINS student_scores with the courses table.
         const [
-            [recommendedBooks], 
-            [attendanceHistory], 
+            [recommendedBooks],
+            [attendanceHistory],
             [gradeHistory]
         ] = await Promise.all([
             pool.query("SELECT id, title, COALESCE(deadline, CURDATE()) as deadline, is_read FROM recommended_books WHERE student_user_id = ? ORDER BY deadline", [studentId]),
             pool.query("SELECT id, user_id, COALESCE(attendance_date, CURDATE()) as attendance_date, session, status, attendance_type, late_time FROM attendance WHERE user_id = ? ORDER BY attendance_date DESC", [studentId]),
-            
+
             // This query now joins the tables to get the course_name
             pool.query(`
                 SELECT 
@@ -62,12 +63,12 @@ const getStudentDetails = async (req, res) => {
             `, [studentId])
         ]);
         // =======================================================
-        
+
         const responseData = {
             ...studentProfile,
             recommendedBooks,
             attendanceHistory,
-            gradeHistory: gradeHistory 
+            gradeHistory: gradeHistory
         };
 
         res.status(200).json({ success: true, data: responseData });
@@ -127,7 +128,7 @@ const deleteFamilyLink = async (req, res) => {
         const { linkId } = req.params;
         const [result] = await pool.query("DELETE FROM family_links WHERE id = ?", [linkId]);
         if (result.affectedRows === 0) {
-             return res.status(404).json({ success: false, message: "Link not found." });
+            return res.status(404).json({ success: false, message: "Link not found." });
         }
         res.status(200).json({ success: true, message: "Family link deleted." });
     } catch (error) {
