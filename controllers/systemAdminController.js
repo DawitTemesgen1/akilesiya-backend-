@@ -375,7 +375,8 @@ const getUserDetails = async (req, res) => {
                 u.*,
                 p.*,
                 t.name as school_name,
-                t.id as school_id
+                t.id as school_id,
+                t.logo_url as school_logo_url
             FROM users u
             JOIN profiles p ON u.id = p.user_id
             JOIN tenants t ON u.tenant_id = t.id
@@ -857,10 +858,16 @@ const getSystemAuditLogs = async (req, res) => {
             SELECT 
                 sal.*,
                 t.name as school_name,
-                u.email as admin_email
+                u.email as admin_email,
+                target_p.full_name as affected_user_name,
+                target_u.email as affected_user_email,
+                target_t.name as target_school_name
             FROM system_audit_logs sal
             LEFT JOIN tenants t ON sal.affected_tenant_id = t.id
             LEFT JOIN users u ON sal.system_admin_id = u.id
+            LEFT JOIN users target_u ON sal.affected_user_id = target_u.id
+            LEFT JOIN profiles target_p ON sal.affected_user_id = target_p.user_id
+            LEFT JOIN tenants target_t ON sal.affected_tenant_id = target_t.id
         `;
 
         const queryParams = [];
