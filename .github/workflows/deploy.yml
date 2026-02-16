@@ -23,7 +23,11 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: / # We assume the FTP user 'akilesiya@...' is explicitly rooted to the project folder
+          port: 21
+          server-dir: /
+          timeout: 90000 # Increased timeout to 90s
+          security: loose # Allow self-signed certificates or loose SSL
+          log-level: verbose # Provide more detail in case of failure
           exclude: |
             **/.git*
             **/.git*/**
