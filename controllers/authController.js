@@ -70,7 +70,7 @@ const registerUser = async (req, res) => {
         );
 
         const otp = generateOTP();
-        const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+        const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
         const registrationData = JSON.stringify({
             tenantId,
             tenantName,
@@ -316,8 +316,8 @@ const verifyOTP = async (req, res) => {
             return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
         }
 
-        // OTP Valid! Clear it.
-        await connection.query('UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?', [user.id]);
+        // OTP Valid! (Note: We no longer clear it here so reset-password can use it)
+        // await connection.query('UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?', [user.id]);
 
         await connection.commit();
 
@@ -416,7 +416,7 @@ const forgotPassword = async (req, res) => {
 
         // Generate OTP
         const otp = generateOTP();
-        const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+        const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
         await pool.query('UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?', [otp, otpExpires, user.id]);
 
@@ -527,7 +527,7 @@ const resendOTP = async (req, res) => {
         if (users.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
 
         const otp = generateOTP();
-        const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+        const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
         await pool.query('UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?', [otp, otpExpires, users[0].id]);
         const emailSent = await sendEmailOTP(email, otp);

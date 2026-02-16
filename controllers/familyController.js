@@ -72,24 +72,53 @@ const getStudentDetails = async (req, res) => {
             pool.query(`
                 SELECT 
                     ss.academic_year, 
+                    p.spiritual_class,
                     c.course_name,
-                    -- Aggregate scores for each course. NOTE: This is a simplified aggregation.
-                    -- A more complex query would be needed to sum up individual assessment scores correctly.
                     SUM(ss.score) as total 
                 FROM student_scores ss
                 JOIN courses c ON ss.course_id = c.id
+                JOIN profiles p ON ss.user_id = p.user_id
                 WHERE ss.user_id = ?
-                GROUP BY ss.academic_year, c.course_name
+                GROUP BY ss.academic_year, p.spiritual_class, c.course_name
                 ORDER BY ss.academic_year
             `, [studentId])
         ]);
         // =======================================================
 
+        // Group gradeHistory into the structure expected by the frontend
+        const groupedGrades = [];
+        const groupMap = {};
+
+        gradeHistory.forEach(row => {
+            const key = `${row.spiritual_class} - ${row.academic_year}`;
+            if (!groupMap[key]) {
+                groupMap[key] = {
+                    spiritual_class: row.spiritual_class,
+                    academic_year: row.academic_year,
+                    grades: [],
+                    totalScore: 0,
+                    courseCount: 0
+                };
+                groupedGrades.push(groupMap[key]);
+            }
+            groupMap[key].grades.push({
+                course_name: row.course_name,
+                total: row.total
+            });
+            groupMap[key].totalScore += row.total;
+            groupMap[key].courseCount += 1;
+        });
+
+        // Calculate averages for each group
+        groupedGrades.forEach(group => {
+            group.average = group.courseCount > 0 ? (group.totalScore / group.courseCount) : 0;
+        });
+
         const responseData = {
             ...studentProfile,
             recommendedBooks,
             attendanceHistory,
-            gradeHistory: gradeHistory
+            gradeHistory: groupedGrades
         };
 
         res.status(200).json({ success: true, data: responseData });
