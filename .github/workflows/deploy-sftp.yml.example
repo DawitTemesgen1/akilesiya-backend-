@@ -1,0 +1,32 @@
+name: Deploy Backend to cPanel (SFTP)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+# This is an alternative to FTP. SFTP is more reliable and secure.
+# It requires the SSH server to be enabled in cPanel.
+
+jobs:
+  sftp-deploy:
+    name: 🚀 SFTP Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Get latest code
+        uses: actions/checkout@v3
+
+      - name: 📂 Sync files (SFTP)
+        uses: pressidium/sftp-deploy@v1.10
+        with:
+          host: ${{ secrets.FTP_SERVER }}
+          user: ${{ secrets.FTP_USERNAME }}
+          pass: ${{ secrets.FTP_PASSWORD }} # Or SSH Key
+          port: 22 # Default SFTP port
+          remote_path: / # Update to your project path if needed
+          local_path: .
+          exclude: |
+            .git*
+            node_modules
+            .env
