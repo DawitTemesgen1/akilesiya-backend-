@@ -125,6 +125,17 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
 });
 
+// --- Privacy Policy Route ---
+// Explicitly serve the privacy policy to ensure it works across different domain configurations
+app.get('/privacy.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
+// Also serve it under /api/privacy for back-compatibility or proxy configurations
+app.get('/api/privacy', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {
   console.error('❌ Server Error:', err.stack);
